@@ -35,6 +35,7 @@ from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .entity_map import build_auto_map
 from .const import (
     CONF_PANEL_ADMIN_ONLY,
     CONF_PANEL_SHOW_IN_SIDEBAR,
@@ -413,6 +414,7 @@ async def ws_get(hass: HomeAssistant, connection, msg) -> None:
         msg["id"],
         {
             "map": mgr.data["map"],
+            "auto": build_auto_map(hass),
             "hc_names": mgr.data["hc_names"],
             "is_admin": connection.user.is_admin,
         },

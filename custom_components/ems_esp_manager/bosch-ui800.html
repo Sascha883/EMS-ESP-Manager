@@ -246,7 +246,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.17";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.10.18";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -269,6 +269,7 @@ function toast(t,ms){ const el=$('#toast'); el.textContent=t; el.style.display='
 let settings = Object.assign({ advanced:false, brightness:100, saver:0, lock:false, mode:'auto', url:'', token:'', showMissing:false }, LS.get('settings',{}));
 function saveSettings(){ LS.set('settings',settings); applyDisplay(); }
 let userMap = Object.assign({}, ENTITY_OVERRIDES, LS.get('map',{}));
+let autoMap = {};                // vom Manager: Standard-ID → echte ID (andere Entity-ID-Formate, englische Langnamen …)
 // Zuordnung / Heizkreisnamen: mit Manager in Home Assistant, sonst im Browser
 function mgrSave(data){
   if(!MGR || !conn.ready || !conn.msg) return Promise.resolve(false);
@@ -285,6 +286,7 @@ async function loadMgr(){
     if(r.is_admin && !Object.keys(r.map||{}).length && Object.keys(localMap).length){ r.map = localMap; await mgrSave({map:localMap}); }
     if(r.is_admin && !Object.keys(r.hc_names||{}).length && Object.keys(localHc).length){ r.hc_names = localHc; await mgrSave({hc_names:localHc}); }
     userMap = Object.assign({}, ENTITY_OVERRIDES, r.map||{});
+    autoMap = r.auto || {};
     LS.set('map', r.map||{});
     settings.hcNames = Object.assign({}, r.hc_names||{}); LS.set('settings',settings);
     MGR.is_admin = !!r.is_admin;
@@ -348,6 +350,8 @@ function R(id){                  // Entität auflösen
   if(userMap[id]) return userMap[id];
   if(id in resolved && resolved[id] && S[resolved[id]]) return resolved[id];
   if(S[id]) { resolved[id]=id; return id; }
+  // vom Manager über die EMS-ESP unique_id gefunden (Kurz-/Langnamen, Präfix, umbenannte Entitäten)
+  if(autoMap[id] && S[autoMap[id]]) { resolved[id]=autoMap[id]; return autoMap[id]; }
   // Fallback: gleiche Domain, object_id endet auf die Standard-object_id (z.B. Präfix "ems_esp_")
   const [dom,obj] = id.split('.');
   const cand = Object.keys(S).find(e=>e.startsWith(dom+'.') && e.endsWith('_'+obj));
