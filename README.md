@@ -51,3 +51,10 @@ Ordner `custom_components/ems_esp_manager` nach `config/custom_components/` kopi
 ## Lizenz
 
 **PolyForm Noncommercial License 1.0.0** – siehe [LICENSE](LICENSE).
+
+- ✅ Erlaubt: private Nutzung, Ausprobieren, Anpassen für den Eigenbedarf, gemeinnützige Organisationen, Bildung, Forschung
+- ❌ Nicht erlaubt: kommerzielle Nutzung jeder Art – z. B. Einsatz bei Kunden durch Fachbetriebe oder Dienstleister, Verkauf oder Einbau in kommerzielle Produkte
+
+Kommerzielle Nutzung nur mit gesonderter Lizenz – Anfrage über [haustechnik-matheis.de](https://haustechnik-matheis.de).
+
+Die Nutzung erfolgt auf eigene Gefahr und ohne jegliche Gewährleistung oder Haftung.
