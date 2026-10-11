@@ -52,15 +52,6 @@ def _schema(defaults: Mapping[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, DEFAULT_PASSWORD)
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-            vol.Optional(
-                FIELD_INST_NAME, description={"suggested_value": options.get(CONF_INSTALLER_NAME, "")}
-            ): str,
-            vol.Optional(
-                FIELD_INST_ADDR, description={"suggested_value": options.get(CONF_INSTALLER_ADDR, "")}
-            ): str,
-            vol.Optional(
-                FIELD_INST_TEL, description={"suggested_value": options.get(CONF_INSTALLER_TEL, "")}
-            ): str,
         }
     )
 
@@ -239,6 +230,15 @@ class EmsEspOptionsFlow(OptionsFlow):
                 FIELD_TOKEN,
                 description={"suggested_value": options.get(CONF_PANEL_TOKEN, "")},
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+            vol.Optional(
+                FIELD_INST_NAME, description={"suggested_value": options.get(CONF_INSTALLER_NAME, "")}
+            ): str,
+            vol.Optional(
+                FIELD_INST_ADDR, description={"suggested_value": options.get(CONF_INSTALLER_ADDR, "")}
+            ): str,
+            vol.Optional(
+                FIELD_INST_TEL, description={"suggested_value": options.get(CONF_INSTALLER_TEL, "")}
+            ): str,
         }
         if mgr is not None and options.get(CONF_PANEL_TOKEN):
             schema[
