@@ -246,7 +246,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.18";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.10.19";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -346,7 +346,17 @@ const S = {};                    // entity_id → {state, attributes}
 let conn = { type:'none', ready:false, send:null };
 const resolved = {};             // Standard-ID → tatsächliche ID (oder null)
 
+// UI800 (HMI 800) mit EMS-ESP 3.8.x: diese Werte gibt es nur für das ganze Gerät
+// (thermostat_summertemp …), nicht je Heizkreis – EMS-ESP 3.9 liefert sie je nach Regler pro HK (#3257)
+const UI800_GLOBAL = ['hpoperatingmode','summertemp','instantstart','coolstart','heatondelay','heatoffdelay','coolondelay','cooloffdelay'];
 function R(id){                  // Entität auflösen
+  const r0 = R1(id);
+  if(S[r0]) return r0;
+  const m = /^(\w+)\.thermostat_hc\d+_(\w+)$/.exec(id);
+  if(m && UI800_GLOBAL.includes(m[2])){ const g = R1(m[1]+'.thermostat_'+m[2]); if(S[g]) { resolved[id]=g; return g; } }
+  return r0;
+}
+function R1(id){
   if(userMap[id]) return userMap[id];
   if(id in resolved && resolved[id] && S[resolved[id]]) return resolved[id];
   if(S[id]) { resolved[id]=id; return id; }
@@ -366,14 +376,19 @@ function unit(id){ return at(id,'unit_of_measurement')||''; }
 function on(id){ const s=st(id); return s==='on'||s==='true'||s==='1'; }
 
 // Select-Option über Index auf deutsche Anzeige
+// EMS-ESP 3.9-dev liefert „hpoperatingmode“ des UI800 mit Sommer/Auto/Winter statt Aus/Auto/Heizen/Kühlen
+function enumOf(id, enumKey){
+  if(enumKey==='hc.hpoperatingmode'){ const o=at(id,'options')||[]; if(o.length===3) return ENUM['hc.summersetmode']; }
+  return ENUM[enumKey];
+}
 function selLabel(id, enumKey){
   const s = st(id); if(s==null) return '–';
-  const opts = at(id,'options'); const list = ENUM[enumKey];
+  const opts = at(id,'options'); const list = enumOf(id, enumKey);
   if(list && opts){ const i = opts.indexOf(s); if(i>=0 && list[i]) return list[i][1]; }
   return trEnum(enumKey,s);
 }
 function selIndex(id){ const opts=at(id,'options')||[]; return opts.indexOf(st(id)); }
-function selEnKey(id, enumKey){ const i=selIndex(id); const l=ENUM[enumKey]; if(i>=0&&l&&l[i]) return l[i][0]; return String(st(id)||'').toLowerCase(); }
+function selEnKey(id, enumKey){ const i=selIndex(id); const l=enumOf(id, enumKey); if(i>=0&&l&&l[i]) return l[i][0]; return String(st(id)||'').toLowerCase(); }
 
 function callService(domain, service, data){
   if(conn.type==='demo'){ demoApply(domain,service,data); return Promise.resolve(); }
@@ -1104,7 +1119,9 @@ function tileWP(){
 function bigTemp(v){ if(v==null) return `<div class="big">–</div>`; const i=Math.floor(v), d=Math.round((v-i)*10); return `<div class="big">${i}<span class="d"><span>°</span><span>${d}</span></span></div>`; }
 function tileHC(n){
   const mode = selLabel('select.'+hcX(n,'mode'),'hc.mode');
-  const cooling = String(st('sensor.'+hcX(n,'hpoperatingstate'))).toLowerCase()==='cooling';
+  // UI800 mit EMS-ESP 3.8.x liefert keinen „hpoperatingstate“ je Heizkreis → Betriebsart der WP verwenden
+  const osId='sensor.'+hcX(n,'hpoperatingstate');
+  const cooling = has(osId) ? trEnum('hpoperatingstate', st(osId))==='Kühlen' : trEnum('hpactivity', st(B('hpactivity')))==='Kühlen';
   return `<div class="top"><span class="m">${ico(cooling?I.cool:I.heat,34)} ${esc(mode)}</span><div style="margin-top:4px">${esc(cooling?'Kühlen':hcName(n))}</div></div>
     ${bigTemp(nv('number.'+hcX(n,'seltemp')))}
     <div class="lbl" style="margin-top:10px">Wunschtemperatur</div><div class="sub">${hcSubLine(n)}</div>`;
@@ -1261,7 +1278,7 @@ function vEdit(t){
       `<div class="edhint"><span>${it.fmt==='time'?min2t(t.min)+' … '+min2t(t.max):fmtN(t.min)+' … '+fmtN(t.max)+' '+esc(t.u)}</span><span>Wert wird beim Zurückgehen übernommen</span></div>`;
   }
   // Auswahl: Antippen übernimmt sofort (wie Bosch)
-  const opts = at(id,'options')||[]; const cur=opts.indexOf(st(id)); const list = ENUM[it.en]||[];
+  const opts = at(id,'options')||[]; const cur=opts.indexOf(st(id)); const list = enumOf(id, it.en)||[];
   const rows = opts.map((o,i)=>`<div class="row" data-a="${a(()=>{ if(i!==cur){ setSelectIdx(id,i); toast(it.label+': '+(list[i]?list[i][1]:o),1500);} pop(); })}"><span class="k">${esc(list[i]?list[i][1]:o)}</span><span class="rad ${i===cur?'on':''}"></span></div>`).join('');
   return header(it.label)+`<div class="body"><div class="list">${rows}</div></div>`;
 }
