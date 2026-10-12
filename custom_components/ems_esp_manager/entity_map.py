@@ -88,6 +88,10 @@ def build_auto_map(hass: HomeAssistant) -> dict[str, str]:
     for ent in reg.entities.values():
         if ent.platform != "mqtt" or not ent.unique_id or ent.disabled_by:
             continue
+        # leftovers of an earlier entity format stay "unavailable" – never map to them
+        state = hass.states.get(ent.entity_id)
+        if state is None or (state.state == "unavailable" and state.attributes.get("restored")):
+            continue
         domain = ent.entity_id.split(".", 1)[0]
         for i, obj in enumerate(_candidates(str(ent.unique_id))):
             key = f"{domain}.{obj}"
@@ -99,3 +103,45 @@ def build_auto_map(hass: HomeAssistant) -> dict[str, str]:
                 found[key] = ent.entity_id
     # never redirect an id that exists exactly as expected
     return {k: v for k, v in found.items() if k not in exact}
+
+
+# ---------------------------------------------------------------------------
+# Which values does EMS-ESP itself deliver?  (GET /api/<device>/values)
+# Lets the panel tell "not delivered by this system" apart from "missing in HA".
+_TAG_KEY = re.compile(r"^(hc\d+|dhw\d*|ahs\d+|hs\d+|src\d+|wwc\d+)$")
+EMS_DEVICES = ("boiler", "thermostat", "mixer", "solar", "heatpump", "water")
+_CACHE: dict[str, object] = {"t": 0.0, "ids": None}
+
+
+def _flatten(device: str, data: dict) -> set[str]:
+    out: set[str] = set()
+    for key, val in data.items():
+        if isinstance(val, dict) and _TAG_KEY.match(str(key)):
+            out.update(f"{device}_{key}_{k}" for k in val)
+        else:
+            out.add(f"{device}_{key}")
+    return out
+
+
+async def ems_value_ids(api) -> list[str] | None:
+    """Object ids (device[_tag]_short) of all values EMS-ESP currently has; None = unknown."""
+    import time
+
+    if _CACHE["ids"] is not None and time.monotonic() - float(_CACHE["t"]) < 60:
+        return _CACHE["ids"]  # type: ignore[return-value]
+    ids: set[str] = set()
+    ok = False
+    for dev in EMS_DEVICES:
+        for path in (f"/api/{dev}/values", f"/api/{dev}"):
+            try:
+                status, data = await api._request("GET", path)  # noqa: SLF001
+            except Exception:  # noqa: BLE001
+                status, data = 0, None
+            if status == 200 and isinstance(data, dict) and data and "message" not in data:
+                ids |= _flatten(dev, data)
+                ok = True
+                break
+    if not ok:
+        return None
+    _CACHE.update(t=time.monotonic(), ids=sorted(ids))
+    return _CACHE["ids"]  # type: ignore[return-value]

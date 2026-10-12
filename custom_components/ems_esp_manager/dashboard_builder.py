@@ -406,15 +406,8 @@ def build_dashboard(hass: HomeAssistant) -> dict[str, Any]:
             "title": t["mapping"],
             "path": "zuordnung",
             "type": "panel",
-            "cards": [
-                {
-                    "type": "vertical-stack",
-                    "cards": [
-                        {"type": "markdown", "content": t["mapping_hint"]},
-                        {"type": "iframe", "url": f"{URL_PANEL}?page=map", "aspect_ratio": "60%"},
-                    ],
-                }
-            ],
+            # compact list with its own explanation – the iframe fills the whole view
+            "cards": [{"type": "iframe", "url": f"{URL_PANEL}?page=map"}],
         },
     ]
 
