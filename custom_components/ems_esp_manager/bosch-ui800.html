@@ -77,45 +77,74 @@ svg{overflow:visible}
 .dots i{width:8px;height:8px;border-radius:50%;background:#4a4f55}
 .dots i.on{background:var(--acc);width:12px;height:12px}
 
-/* ---------- Zuordnung im Dashboard-Register: Bosch-Optik, halbe Schriftgröße ---------- */
+/* ---------- Zuordnung im Dashboard-Register (Bosch-Optik, skaliert mit der Fensterbreite) ---------- */
 #mapx{display:none;position:fixed;inset:0;overflow:auto;background:#000;color:#fff;font-size:15px;line-height:1.3}
 body.mapx #stage{display:none}
 body.mapx #mapx{display:block}
-#mapx .mh{position:sticky;top:0;z-index:2;background:#000;height:44px;max-width:480px;margin:0 auto;zoom:var(--mxz,2)}
-#mapx .mh::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--rainbow)}
-#mapx .mh .t{position:absolute;left:50%;top:10px;transform:translateX(-50%);font-size:16px;white-space:nowrap}
-#mapx .mh .b{position:absolute;left:4px;top:8px;width:26px;height:26px;cursor:pointer;color:#fff}
-#mapx .mh .b svg{width:22px;height:22px}
-#mapx .ml{max-width:460px;margin:4px auto 24px;zoom:var(--mxz,2)}
-#mapx .r{min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 6px;border-bottom:1px solid var(--sep,#2a2a2a);cursor:pointer}
-#mapx .r:hover{background:#0d0d0d}
-#mapx .r.ro{cursor:default}#mapx .r.ro:hover{background:none}
-#mapx .r .k{min-width:0;overflow:hidden;text-overflow:ellipsis}
-#mapx .r .k small{display:block;font-size:11px;color:#8b8b8b;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#mapx .r .k small .via{color:#4fb3f6}
-#mapx .r .v{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:14px;color:#e8e8e8}
-#mapx .r .v .val{color:#9a9a9a;font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis}
-#mapx .r .v svg{width:9px;height:15px;opacity:.8}
-#mapx .tabs{position:static;inset:auto;height:auto;width:auto;display:flex;gap:18px;justify-content:center;font-size:14px;padding:10px 0 4px;flex-wrap:wrap}
-#mapx .tabs span{cursor:pointer;padding-bottom:2px;color:#ddd}
-#mapx .tabs span.on{color:var(--acc,#1e88e5);border-bottom:2px solid var(--acc,#1e88e5)}
-#mapx .tabs b{font-weight:400;color:#888;margin-left:3px}
-#mapx .tabs span.on b{color:inherit}
-#mapx input.q{width:100%;box-sizing:border-box;background:#111;border:1px solid #333;border-radius:4px;color:#eee;padding:6px 10px;font:inherit;font-size:13px;margin:6px 0}
-#mapx .p{font-size:11px;padding:1px 7px;border-radius:8px;background:#1e3a1e;color:#9fe29f}
-#mapx .p.no{background:#3a1e1e;color:#f0a0a0}#mapx .p.na{background:#2a2a2a;color:#9a9a9a}
-#mapx .note{font-size:11px;color:#8b8b8b;padding:8px 6px;line-height:1.45}
-#mapx .note.ok{color:#9fe29f}
-#mapx .ed{padding:10px 6px}
-#mapx .ed .lb{font-size:11px;color:#8b8b8b;margin-top:8px}
-#mapx .ed .vl{font-size:15px;margin:2px 0 4px}
-#mapx .ed input{width:100%;box-sizing:border-box;background:#111;border:1px solid #333;border-radius:4px;color:#eee;padding:7px 10px;font:13px ui-monospace,Consolas,monospace;margin-top:4px}
-#mapx .ed .sg{font-size:13px;padding:6px 6px;border-bottom:1px solid #222;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
-#mapx .ed .sg:hover{background:#0d0d0d}
-#mapx .bt{display:flex;gap:10px;margin-top:14px}
-#mapx .bt div{flex:1;text-align:center;border:1px solid #555;padding:8px 0;cursor:pointer;font-size:14px}
-#mapx .bt div.pri{background:var(--acc,#1e88e5);border-color:var(--acc,#1e88e5)}
-@media (max-width:700px){#mapx .mh{zoom:1;margin:0 8px}#mapx .ml{zoom:1;margin:4px 10px 24px}}
+#mapx *{box-sizing:border-box}
+#mapx .mx-wrap{max-width:470px;margin:0 auto;padding:0 6px 24px;zoom:var(--mxz,2)}
+#mapx .mx-h{position:sticky;top:0;z-index:5;background:#000;height:46px;display:grid;grid-template-columns:30px 1fr 30px;align-items:center}
+#mapx .mx-h::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--rainbow)}
+#mapx .mx-h .mx-t{grid-column:2;text-align:center;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mapx .mx-back{grid-column:1;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff}
+#mapx .mx-back svg{width:22px;height:22px}
+#mapx .mx-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0 8px}
+#mapx .mx-st{border:1px solid #333;border-radius:6px;padding:7px 4px 6px;text-align:center;cursor:pointer;background:#0b0b0b}
+#mapx .mx-st:hover{border-color:#555}
+#mapx .mx-st .mx-num{display:block;font-size:20px;line-height:1.1}
+#mapx .mx-st .mx-lab{display:block;font-size:10px;color:#9a9a9a;margin-top:2px;white-space:nowrap}
+#mapx .mx-st.mx-ok .mx-num{color:#7fd06a}
+#mapx .mx-st.mx-miss .mx-num{color:#f08a8a}
+#mapx .mx-st.mx-na .mx-num{color:#a0a0a0}
+#mapx .mx-st.mx-on{border-color:var(--acc);background:#08233a}
+#mapx .mx-st.mx-on .mx-lab{color:#cfe6f7}
+#mapx .mx-q{display:block;width:100%;background:#111;border:1px solid #333;border-radius:6px;color:#eee;padding:7px 10px;font:inherit;font-size:13px;margin:0 0 6px;outline:none}
+#mapx .mx-q:focus{border-color:var(--acc)}
+#mapx .mx-sec{font-size:11px;color:#8b8b8b;margin:10px 6px 2px;text-transform:uppercase;letter-spacing:.04em}
+#mapx .mx-r{min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px;border-bottom:1px solid var(--sep,#2a2a2a);cursor:pointer}
+#mapx .mx-r:hover{background:#0d0d0d}
+#mapx .mx-k{flex:1 1 auto;min-width:0}
+#mapx .mx-k .mx-l{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mapx .mx-k small{display:block;font-size:11px;color:#8b8b8b;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mapx .mx-k small .mx-via{color:#4fb3f6}
+#mapx .mx-v{flex:0 0 auto;display:flex;align-items:center;gap:8px;white-space:nowrap}
+#mapx .mx-val{color:#9a9a9a;font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+#mapx .mx-v svg{width:9px;height:15px;opacity:.8}
+#mapx .mx-p{font-size:11px;padding:1px 8px;border-radius:9px;background:#1e3a1e;color:#9fe29f}
+#mapx .mx-p.mx-no{background:#3a1e1e;color:#f0a0a0}
+#mapx .mx-p.mx-nv{background:#2a2a2a;color:#a0a0a0}
+#mapx .mx-n{font-size:11px;color:#8b8b8b;padding:10px 6px;line-height:1.5}
+#mapx .mx-n b{color:#bbb;font-weight:500}
+#mapx .mx-n.mx-good{color:#9fe29f}
+#mapx .mx-ed{padding:6px}
+#mapx .mx-lb{font-size:11px;color:#8b8b8b;margin-top:12px}
+#mapx .mx-vl{font-size:15px;margin-top:2px;word-break:break-all}
+#mapx .mx-vl.mx-mono{font-size:13px}
+#mapx .mx-in{display:block;width:100%;background:#111;border:1px solid #333;border-radius:6px;color:#eee;padding:8px 10px;font:13px ui-monospace,Consolas,monospace;margin-top:4px;outline:none}
+#mapx .mx-in:focus{border-color:var(--acc)}
+#mapx .mx-sg{font-size:13px;padding:7px 6px;border-bottom:1px solid #222;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+#mapx .mx-sg:hover{background:#0d0d0d}
+#mapx .mx-sg span:last-child{color:#888}
+#mapx .mx-bt{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:16px}
+#mapx .mx-bt div{text-align:center;border:1px solid #555;border-radius:4px;padding:8px 0;cursor:pointer;font-size:14px}
+#mapx .mx-bt div:hover{border-color:#888}
+#mapx .mx-bt .mx-pri{background:var(--acc);border-color:var(--acc)}
+#mapx .mx-c{font-size:10px;padding:1px 5px;border-radius:7px;background:#1e3a1e;color:#9fe29f;font-weight:500}
+#mapx .mx-c.mx-bad{background:#3a2a10;color:#f2c46a}
+#mapx .mx-c.mx-off{background:#222;color:#777}
+#mapx .mx-chk{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #333;border-radius:6px;padding:8px 10px;margin:0 0 8px;background:#0b0b0b}
+#mapx .mx-chk small{display:block;font-size:11px;color:#8b8b8b;margin-top:2px}
+#mapx .mx-btn{flex:0 0 auto;border:1px solid var(--acc);color:#fff;background:var(--acc);border-radius:4px;padding:6px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+#mapx .mx-btn.mx-ghost{background:none;color:#cfe6f7}
+#mapx .mx-btn.mx-dis{opacity:.5;pointer-events:none}
+#mapx .mx-stats.mx-s2{grid-template-columns:repeat(4,1fr);margin-top:0}
+#mapx .mx-st.mx-rbad .mx-num,#mapx .mx-st.mx-wbad .mx-num{color:#f2c46a}
+#mapx .mx-st.mx-rok .mx-num,#mapx .mx-st.mx-wok .mx-num{color:#7fd06a}
+#mapx .mx-tbl{margin-top:4px;border-top:1px solid #222}
+#mapx .mx-tbl div{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid #222;font-size:13px}
+#mapx .mx-tbl div span:first-child{color:#8b8b8b}
+#mapx .mx-tbl div span:last-child{text-align:right;word-break:break-all}
+@media (max-width:700px){#mapx .mx-wrap{zoom:1}#mapx .mx-stats{grid-template-columns:repeat(2,1fr)}}
 /* Bildschirme */
 .scr{position:absolute;inset:0;background:var(--bg)}
 .body{position:absolute;top:80px;left:66px;right:66px;bottom:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#777 transparent;padding:0 0 12px}
@@ -287,7 +316,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.27";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.10.29";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -1168,67 +1197,146 @@ document.addEventListener('click',ev=>{
 });
 
 
-/* ---------- Zuordnung im Dashboard-Register (Bosch-Optik, halbe Schrift) ---------- */
-const MX = { filter:null, q:'', view:[{t:'ov'}], last:0, html:'', msg:'' };
+/* ---------- Zuordnung im Dashboard-Register (Bosch-Optik) ---------- */
+const MX = { filter:null, q:'', view:[{t:'ov'}], last:0, html:'', msg:'', chk:null, chkAt:null, busy:false, wmsg:'' };
 const mxTop = () => MX.view[MX.view.length-1];
-function mxPill(s_){ return s_==='ok'?'<span class="p">OK</span>':s_==='na'?'<span class="p na" title="EMS-ESP liefert diesen Wert für diese Anlage nicht">nicht geliefert</span>':'<span class="p no" title="EMS-ESP liefert den Wert, aber in Home Assistant fehlt die Entität">fehlt in HA</span>'; }
-function mxHead(title){ return `<div class="mh">${MX.view.length>1?`<div class="b" data-mx="back:">${I.back}</div>`:''}<div class="t">${esc(title)}</div></div>`; }
+const MX_TXT = { all:'Alle', ok:'Gefunden', miss:'Fehlt in HA', na:'Nicht geliefert', rok:'Lesen OK', rbad:'Lesen Problem', wok:'Schreiben OK', wbad:'Schreiben Problem' };
+const MX_R = { ok:'wird gelesen', diff:'HA-Wert weicht von EMS-ESP ab', empty:'EMS-ESP kennt den Wert, hat aber noch keinen Inhalt', noha:'EMS-ESP liefert, in HA fehlt die Entität', na:'wird von der Anlage nicht geliefert', hidden:'in EMS-ESP für API/MQTT ausgeblendet', nocheck:'nicht über EMS-ESP prüfbar' };
+const MX_W = { ok:'beschreibbar', ha_ro:'EMS-ESP erlaubt Schreiben, die HA-Entität ist aber nur lesend', ems_ro:'in EMS-ESP schreibgeschützt (nur lesen)', show:'nur Anzeige – wird nicht geschrieben', nocheck:'nicht über EMS-ESP prüfbar' };
+const MX_WDOM = ['number','select','switch','text','input_number','input_boolean','input_select'];
+function mxEms(id){ if(!MX.chk) return null; const obj=(id.split('.')[1]||''); if(MX.chk[obj]) return MX.chk[obj];
+  const m=/^thermostat_hc\d+_(\w+)$/.exec(obj); if(m && UI800_GLOBAL.includes(m[1]) && MX.chk['thermostat_'+m[1]]) return MX.chk['thermostat_'+m[1]]; return null; }
+function mxSame(a,b){ if(a==null||b==null) return false;
+  const B=x=>{ x=String(x).trim().toLowerCase(); return x==='true'||x==='on'||x==='1'?'on':x==='false'||x==='off'||x==='0'?'off':x; };
+  const fa=parseFloat(a), fb=parseFloat(b);
+  if(!isNaN(fa)&&!isNaN(fb)&&/^-?[\d.]+$/.test(String(a).trim())&&/^-?[\d.]+$/.test(String(b).trim())) return Math.abs(fa-fb)<0.051;
+  return B(a)===B(b); }
+// Ergebnis der Prüfung für eine Panel-ID: {r: Lesen, w: Schreiben, e: EMS-ESP-Daten}
+function mxCheck(id){
+  if(!MX.chk) return null;
+  const e=mxEms(id), r=R(id), hs=S[r], haOk=!!hs && hs.state!=='unavailable' && hs.state!=='unknown';
+  const wants=MX_WDOM.includes(id.split('.')[0]), haW=MX_WDOM.includes(r.split('.')[0]);
+  if(!e){ const known=emsKnows(id); if(known===null) return {r:'nocheck', w:'nocheck', e:null}; return {r:haOk?'ok':'na', w:wants?(haOk?'nocheck':'na'):'show', e:null}; }
+  let rd = !e.r ? 'hidden' : (!('v' in e) && !haOk) ? 'na' : !haOk ? 'noha' : !('v' in e) ? 'empty' : (e.w && !mxSame(e.v, hs.state)) ? 'diff' : 'ok';
+  let wr = rd==='na' ? 'na' : !wants ? 'show' : !e.w ? 'ems_ro' : !haW ? 'ha_ro' : haOk ? 'ok' : 'noha';
+  return {r:rd, w:wr, e};
+}
+const mxRbad = c => c && ['diff','empty','noha','hidden'].includes(c.r);
+const mxWbad = c => c && ['ha_ro','ems_ro'].includes(c.w);
+function mxCPills(id){ const c=mxCheck(id); if(!c) return '';
+  const rp = c.r==='na'||c.r==='nocheck' ? '' : `<span class="mx-c${mxRbad(c)?' mx-bad':''}" title="Lesen: ${esc(MX_R[c.r]||'')}">L${mxRbad(c)?' !':' ✓'}</span>`;
+  const wp = c.w==='show'||c.w==='na'||c.w==='nocheck'||c.w==='noha' ? '' : `<span class="mx-c${mxWbad(c)?' mx-bad':''}" title="Schreiben: ${esc(MX_W[c.w]||'')}">S${mxWbad(c)?' !':' ✓'}</span>`;
+  return rp+wp; }
+async function mxRunCheck(){
+  if(!conn.msg){ MX.msg='Prüfung nur in Home Assistant möglich.'; MX.html=''; renderMapX(); return; }
+  MX.busy=true; MX.html=''; renderMapX();
+  try{ const r=await conn.msg({type:'ems_esp_manager/panel/check'});
+    if(!r || !r.entities){ MX.msg='EMS-ESP nicht erreichbar – Prüfung nicht möglich.'; }
+    else { MX.chk=r.entities; MX.chkAt=new Date(); MX.msg=''; }
+  }catch(e){ MX.msg='Prüfung fehlgeschlagen: '+((e&&e.message)||e)+' (Manager aktualisieren und HA neu starten?)'; }
+  MX.busy=false; MX.html=''; renderMapX(); }
+async function mxWriteTest(id){
+  const r=R(id), d=r.split('.')[0], s0=st(id); MX.wmsg='Schreibtest läuft …'; MX.html=''; renderMapX();
+  try{
+    if(d==='number'||d==='input_number') await callService(d,'set_value',{entity_id:r,value:s0});
+    else if(d==='select'||d==='input_select') await callService(d,'select_option',{entity_id:r,option:s0});
+    else if(d==='switch'||d==='input_boolean') await callService(d,s0==='on'?'turn_on':'turn_off',{entity_id:r});
+    else if(d==='text') await callService(d,'set_value',{entity_id:r,value:s0});
+    else throw new Error('Domain '+d+' kann nicht geschrieben werden');
+    await new Promise(x=>setTimeout(x,3000));
+    const rr=await conn.msg({type:'ems_esp_manager/panel/check'}); if(rr&&rr.entities){ MX.chk=rr.entities; MX.chkAt=new Date(); }
+    const c=mxCheck(id);
+    MX.wmsg = c && c.e && 'v' in c.e && mxSame(c.e.v, st(id)) ? '✓ Schreibbefehl angenommen – EMS-ESP und HA melden denselben Wert ('+st(id)+').' : '⚠ Befehl gesendet, aber EMS-ESP meldet '+(c&&c.e&&'v' in c.e?'„'+c.e.v+'“':'keinen Wert')+' – HA zeigt „'+st(id)+'“.';
+  }catch(e){ MX.wmsg='✗ Schreiben fehlgeschlagen: '+((e&&e.message)||e); }
+  MX.html=''; renderMapX(); }
+function mxPill(s_){ return s_==='ok'?'<span class="mx-p">OK</span>':s_==='na'?'<span class="mx-p mx-nv" title="EMS-ESP liefert diesen Wert für diese Anlage nicht">nicht geliefert</span>':'<span class="mx-p mx-no" title="EMS-ESP liefert den Wert, aber in Home Assistant fehlt die Entität">fehlt in HA</span>'; }
+function mxHead(title){ return `<div class="mx-h">${MX.view.length>1?`<div class="mx-back" data-mx="back:">${I.back}</div>`:''}<div class="mx-t">${esc(title)}</div></div>`; }
 function mxZoom(){ const w=window.innerWidth; const z=w<700?1:Math.max(1.3,Math.min(2,w/570)); document.documentElement.style.setProperty('--mxz',z.toFixed(2)); }
 mxZoom(); window.addEventListener('resize',mxZoom);
+function mxEditCheck(id){
+  if(!conn.msg) return '';
+  const c=mxCheck(id);
+  if(!c) return `<div class="mx-lb">Prüfung</div><div class="mx-chk" style="margin-top:4px"><span>Lesen &amp; Schreiben prüfen<small>Es wird nichts verändert.</small></span><span class="mx-btn${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Prüfen'}</span></div>`;
+  const e=c.e||{}, mm=('min' in e||'max' in e)?`${e.min??'–'} … ${e.max??'–'}${e.u?' '+e.u:''}`:'';
+  const canW = c.w==='ok' && MGR && MGR.is_admin!==false;
+  return `<div class="mx-lb">Prüfung</div><div class="mx-tbl">
+    <div><span>Lesen</span><span>${mxRbad(c)?'! ':c.r==='ok'?'✓ ':''}${esc(MX_R[c.r]||'')}</span></div>
+    <div><span>Schreiben</span><span>${mxWbad(c)?'! ':c.w==='ok'?'✓ ':''}${esc(MX_W[c.w]||MX_R[c.w]||'')}</span></div>
+    ${c.e?`<div><span>Wert EMS-ESP</span><span>${'v' in e?esc(String(e.v)):'–'}</span></div>`:''}
+    <div><span>Wert Home Assistant</span><span>${esc(st(id)??'–')}</span></div>
+    ${mm?`<div><span>Bereich</span><span>${esc(mm)}</span></div>`:''}</div>
+    ${MX.wmsg?`<div class="mx-n${/^✓/.test(MX.wmsg)?' mx-good':''}">${esc(MX.wmsg)}</div>`:''}
+    ${canW?`<div class="mx-chk" style="margin-top:8px"><span>Schreibtest<small>Schreibt den aktuellen Wert unverändert zurück und prüft, ob EMS-ESP ihn bestätigt.</small></span><span class="mx-btn mx-ghost" data-mx="wt:${esc(id)}">Testen</span></div>`:''}`;
+}
+function mxChkBox(all){
+  if(!conn.msg) return '';
+  if(!MX.chk) return `<div class="mx-chk"><span>Lesen &amp; Schreiben prüfen<small>Fragt alle Werte direkt beim EMS-ESP ab und vergleicht sie mit Home Assistant. Es wird nichts verändert.</small></span><span class="mx-btn${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Prüfen'}</span></div>`;
+  const c={rok:0,rbad:0,wok:0,wbad:0}; all.forEach(id=>{ const x=mxCheck(id); if(!x) return; if(x.r==='ok') c.rok++; if(mxRbad(x)) c.rbad++; if(x.w==='ok') c.wok++; if(mxWbad(x)) c.wbad++; });
+  const tile=(k)=>`<div class="mx-st mx-${k}${MX.filter===k?' mx-on':''}" data-mx="f:${k}"><span class="mx-num">${c[k]}</span><span class="mx-lab">${MX_TXT[k]}</span></div>`;
+  const t=MX.chkAt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+  return `<div class="mx-chk"><span>Prüfung vom ${t} Uhr<small>L = Lesen, S = Schreiben · ✓ in Ordnung · ! Problem – Zeile antippen für Details.</small></span><span class="mx-btn mx-ghost${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Erneut prüfen'}</span></div>
+    <div class="mx-stats mx-s2">${tile('rok')}${tile('rbad')}${tile('wok')}${tile('wbad')}</div>`;
+}
 function renderMapX(){
   const box=$('#mapx'); if(!box) return;
   const ae=document.activeElement; if(ae && box.contains(ae) && ae.tagName==='INPUT') return;   // nicht beim Tippen neu aufbauen
   const all=mapIds(), stOf={}; all.forEach(id=>stOf[id]=mapState(id));
   const n={ok:0,na:0,miss:0}; all.forEach(id=>n[stOf[id]]++);
-  if(!MX.filter) MX.filter = n.miss ? 'miss' : 'all';
+  if(!MX.filter || !MX_TXT[MX.filter] || (!MX.chk && /^[rw]/.test(MX.filter))) MX.filter = n.miss ? 'miss' : 'all';
   const q=MX.q.trim().toLowerCase();
-  const pass=id=>{ const s_=stOf[id];
-    if(MX.filter==='prob' && s_==='ok') return false;
-    if(MX.filter==='miss' && s_!=='miss') return false;
-    if(MX.filter==='na' && s_!=='na') return false;
+  const pass=id=>{ const f=MX.filter;
+    if(['ok','miss','na'].includes(f) && stOf[id]!==f) return false;
+    if(f==='rok'||f==='rbad'||f==='wok'||f==='wbad'){ const c=mxCheck(id); if(!c) return false;
+      if(f==='rok' && c.r!=='ok') return false; if(f==='rbad' && !mxRbad(c)) return false;
+      if(f==='wok' && c.w!=='ok') return false; if(f==='wbad' && !mxWbad(c)) return false; }
     if(q && !(mapLabel(id).toLowerCase().includes(q) || id.includes(q) || String(R(id)).includes(q))) return false;
     return true; };
   const row=id=>{ const r=R(id), custom=!!userMap[id], val=has(id)?(st(id)+(unit(id)?' '+unit(id):'')):'';
-    return `<div class="r" data-mx="edit:${esc(id)}"><span class="k">${esc(mapLabel(id))}<small>${esc(id)}${r!==id?` <span class="via">→ ${esc(r)} · ${custom?'manuell':'automatisch'}</span>`:''}</small></span><span class="v">${val?`<span class="val">${esc(val)}</span>`:''}${mxPill(stOf[id])}${I.chevR}</span></div>`; };
-  const v=mxTop(); let html='';
+    return `<div class="mx-r" data-mx="edit:${esc(id)}"><span class="mx-k"><span class="mx-l">${esc(mapLabel(id))}</span><small>${esc(r!==id?r:id)}${r!==id?` <span class="mx-via">· ${custom?'manuell':'automatisch'}</span>`:''}</small></span><span class="mx-v">${val?`<span class="mx-val">${esc(val)}</span>`:''}${mxCPills(id)}${mxPill(stOf[id])}${I.chevR}</span></div>`; };
+  const v=mxTop(); let body='', title='Entitäten-Zuordnung';
   if(v.t==='ov'){
-    const tab=(k,l,c)=>`<span class="${MX.filter===k?'on':''}" data-mx="f:${k}">${l}<b>${c}</b></span>`;
+    const tile=(k,c)=>`<div class="mx-st mx-${k}${MX.filter===k?' mx-on':''}" data-mx="f:${k}"><span class="mx-num">${c}</span><span class="mx-lab">${MX_TXT[k]}</span></div>`;
     let rows='';
-    if(q){ const ids=all.filter(pass).sort((x,y)=>mapLabel(x).localeCompare(mapLabel(y),'de')); rows=ids.map(row).join('') || '<div class="note">Nichts gefunden.</div>'; }
+    if(q){ const ids=all.filter(pass).sort((x,y)=>mapLabel(x).localeCompare(mapLabel(y),'de')); rows=ids.map(row).join(''); }
     else for(const [k,g] of mapBuckets()){
-      const c={ok:0,na:0,miss:0}; g.ids.forEach(id=>c[stOf[id]]++);
       const vis=g.ids.filter(pass).length; if(!vis) continue;
-      const pill = c.miss ? `<span class="p no">${c.miss} fehlt</span>` : c.na ? `<span class="p na">${c.na} n. v.</span>` : '<span class="p">OK</span>';
-      rows+=`<div class="r" data-mx="grp:${k}"><span class="k">${esc(g.name)}<small>${c.ok} von ${g.ids.length} gefunden${c.na?` · ${c.na} liefert die Anlage nicht`:''}</small></span><span class="v">${pill}${I.chevR}</span></div>`;
+      const c={ok:0,na:0,miss:0}; g.ids.forEach(id=>c[stOf[id]]++);
+      const pill = /^[rw]/.test(MX.filter) ? `<span class="mx-p${/bad$/.test(MX.filter)?' mx-no':''}">${vis}</span>` : MX.filter==='all' ? (c.miss?`<span class="mx-p mx-no">${c.miss} fehlt</span>`:c.na?`<span class="mx-p mx-nv">${c.na} n. v.</span>`:'<span class="mx-p">OK</span>')
+                 : `<span class="mx-p${MX.filter==='miss'?' mx-no':MX.filter==='na'?' mx-nv':''}">${vis}</span>`;
+      const sub = [`${c.ok} von ${g.ids.length} gefunden`, c.miss?`${c.miss} fehlt in HA`:'', c.na?`${c.na} nicht geliefert`:''].filter(Boolean).join(' · ');
+      rows+=`<div class="mx-r" data-mx="grp:${k}"><span class="mx-k"><span class="mx-l">${esc(g.name)}</span><small>${sub}</small></span><span class="mx-v">${pill}${I.chevR}</span></div>`;
     }
     const custom=Object.keys(diffMap()).length;
-    html = mxHead('Entitäten-Zuordnung')+`<div class="ml">
-      <div class="r ro"><span class="k">Gefunden<small>${custom} eigene Zuordnung${custom===1?'':'en'}${emsIds?` · ${n.na} liefert die Anlage nicht · ${n.miss} fehlen in HA`:''}</small></span><span class="v">${n.ok} von ${all.length}</span></div>
-      <div class="tabs">${tab('miss','Fehlt in HA',n.miss)}${tab('na','Nicht geliefert',n.na)}${tab('prob','Probleme',n.miss+n.na)}${tab('all','Alle',all.length)}</div>
-      <input class="q" id="mxq" placeholder="Suchen …" value="${esc(MX.q)}">
-      ${MX.msg?`<div class="note ok">${esc(MX.msg)}</div>`:''}
-      ${rows||'<div class="note">Keine Einträge für diesen Filter.</div>'}
-      <div class="note">${emsIds?'<b>Fehlt in HA</b>: EMS-ESP liefert den Wert, aber Home Assistant hat keine passende Entität – antippen und zuordnen. <b>Nicht geliefert</b>: Regler / Wärmepumpe stellen den Wert nicht bereit, das Panel blendet ihn aus.':'Welche Werte EMS-ESP liefert, konnte nicht abgefragt werden – „fehlt“ kann auch „wird nicht geliefert“ bedeuten.'}</div>
-      ${custom&&MGR&&MGR.is_admin!==false?`<div class="r" data-mx="reset:"><span class="k">Eigene Zuordnungen zurücksetzen<small>${custom} eigene Zuordnung${custom===1?'':'en'}</small></span><span class="v">⟲</span></div>`:''}</div>`;
+    const empty = MX.filter==='miss' ? '✓ Alles zugeordnet – es fehlt keine Entität in Home Assistant.' : 'Keine Einträge.';
+    body = `<div class="mx-stats">${tile('all',all.length)}${tile('ok',n.ok)}${tile('miss',n.miss)}${emsIds?tile('na',n.na):''}</div>
+      ${mxChkBox(all)}
+      <input class="mx-q" id="mxq" placeholder="Funktion oder Entität suchen …" value="${esc(MX.q)}">
+      ${MX.msg?`<div class="mx-n mx-good">${esc(MX.msg)}</div>`:''}
+      <div class="mx-sec">${q?'Suchergebnis':'Bereiche'} · ${MX_TXT[MX.filter]}</div>
+      ${rows||`<div class="mx-n${MX.filter==='miss'?' mx-good':''}">${empty}</div>`}
+      <div class="mx-n">${emsIds?'<b>Fehlt in HA</b> – EMS-ESP liefert den Wert, aber Home Assistant hat keine passende Entität. Antippen und zuordnen.<br><b>Nicht geliefert</b> – Regler bzw. Wärmepumpe stellen den Wert nicht bereit. Das Panel blendet ihn aus, hier ist nichts zu tun.':'Welche Werte EMS-ESP liefert, konnte nicht abgefragt werden – „fehlt in HA“ kann auch „wird nicht geliefert“ bedeuten.'}</div>
+      ${custom&&MGR&&MGR.is_admin!==false?`<div class="mx-r" data-mx="reset:"><span class="mx-k"><span class="mx-l">Eigene Zuordnungen zurücksetzen</span><small>${custom} eigene Zuordnung${custom===1?'':'en'}</small></span><span class="mx-v">⟲</span></div>`:''}`;
   } else if(v.t==='grp'){
-    const g=mapBuckets().get(v.g)||{name:'Zuordnung',ids:[]};
+    const g=mapBuckets().get(v.g)||{name:'Zuordnung',ids:[]}; title=g.name;
     const ids=g.ids.filter(pass).sort((x,y)=>mapLabel(x).localeCompare(mapLabel(y),'de'));
-    html = mxHead(g.name)+`<div class="ml">${ids.map(row).join('')||'<div class="note">Keine Einträge für diesen Filter.</div>'}</div>`;
+    body = `${conn.msg&&!MX.chk?`<div class="mx-chk" style="margin-top:10px"><span>Lesen &amp; Schreiben prüfen<small>Es wird nichts verändert.</small></span><span class="mx-btn${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Prüfen'}</span></div>`:''}<div class="mx-sec">${MX_TXT[MX.filter]} · ${ids.length}</div>${ids.map(row).join('')||'<div class="mx-n">Keine Einträge.</div>'}`;
   } else if(v.t==='edit'){
-    const id=v.id, dom=id.split('.')[0], r=R(id);
+    const id=v.id, dom=id.split('.')[0], r=R(id); title='Zuordnung';
     const cands=Object.keys(S).filter(e=>e.startsWith(dom+'.')||(dom==='sensor'&&e.startsWith('text.'))).sort();
     const key=(id.split('.')[1]||'').replace(/^(boiler|thermostat)_/,'').split('_').pop();
     const sugg=cands.filter(e=>e.includes(key)).slice(0,8);
-    html = mxHead('Zuordnung')+`<div class="ml"><div class="ed">
-      <div class="lb">Funktion</div><div class="vl">${esc(mapLabel(id))} ${mxPill(stOf[id]||mapState(id))}</div>
-      <div class="lb">Standard (EMS-ESP)</div><div class="vl" style="font-size:13px">${esc(id)}</div>
-      ${r!==id?`<div class="lb">Aktuell verwendet</div><div class="vl" style="font-size:13px">${esc(r)} · ${userMap[id]?'manuell':'automatisch'}</div>`:''}
-      <div class="lb">Deine Entität</div>
-      <input id="mxin" list="mxdl" value="${esc(userMap[id]||r)}"><datalist id="mxdl">${cands.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
-      ${sugg.length?`<div class="lb" style="margin-bottom:4px">Vorschläge</div>${sugg.map(x=>`<div class="sg" data-mx="pick:${esc(x)}"><span>${esc(x)}</span><span style="color:#888">${esc((S[x]||{}).state)}</span></div>`).join('')}`:''}
-      ${MGR&&MGR.is_admin===false?'<div class="note">Ändern nur als Administrator.</div>':`<div class="bt"><div data-mx="std:${esc(id)}">Standard</div><div data-mx="back:">Abbrechen</div><div class="pri" data-mx="save:${esc(id)}">Speichern</div></div>`}
-    </div></div>`;
+    body = `<div class="mx-ed">
+      <div class="mx-lb">Funktion</div><div class="mx-vl">${esc(mapLabel(id))} ${mxPill(stOf[id]||mapState(id))}</div>
+      <div class="mx-lb">Standard (EMS-ESP)</div><div class="mx-vl mx-mono">${esc(id)}</div>
+      ${r!==id?`<div class="mx-lb">Aktuell verwendet</div><div class="mx-vl mx-mono">${esc(r)} · ${userMap[id]?'manuell':'automatisch'}</div>`:''}
+      ${mxEditCheck(id)}
+      <div class="mx-lb">Deine Entität</div>
+      <input class="mx-in" id="mxin" list="mxdl" value="${esc(userMap[id]||r)}"><datalist id="mxdl">${cands.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+      ${sugg.length?`<div class="mx-lb">Vorschläge</div>${sugg.map(x=>`<div class="mx-sg" data-mx="pick:${esc(x)}"><span>${esc(x)}</span><span>${esc((S[x]||{}).state)}</span></div>`).join('')}`:''}
+      ${MGR&&MGR.is_admin===false?'<div class="mx-n">Ändern nur als Administrator.</div>':`<div class="mx-bt"><div data-mx="std:${esc(id)}">Standard</div><div data-mx="back:">Abbrechen</div><div class="mx-pri" data-mx="save:${esc(id)}">Speichern</div></div>`}
+    </div>`;
   }
+  const html = `<div class="mx-wrap">${mxHead(title)}${body}</div>`;
   MX.last=Date.now();
   if(html===MX.html) return;
   MX.html=html; box.innerHTML=html;
@@ -1239,8 +1347,10 @@ document.addEventListener('click',ev=>{
   const i=b.dataset.mx.indexOf(':'), k=b.dataset.mx.slice(0,i), v=b.dataset.mx.slice(i+1);
   const go=()=>{ MX.html=''; renderMapX(); $('#mapx').scrollTop=0; };
   if(k==='f'){ MX.filter=v; MX.msg=''; go(); }
+  else if(k==='chk'){ mxRunCheck(); }
+  else if(k==='wt'){ mxWriteTest(v); }
   else if(k==='grp'){ MX.view.push({t:'grp',g:v}); MX.msg=''; go(); }
-  else if(k==='edit'){ MX.view.push({t:'edit',id:v}); go(); }
+  else if(k==='edit'){ MX.wmsg=''; MX.view.push({t:'edit',id:v}); go(); }
   else if(k==='back'){ if(MX.view.length>1) MX.view.pop(); go(); }
   else if(k==='pick'){ const x=$('#mxin'); if(x) x.value=v; }
   else if(k==='save'){ const nv_=(($('#mxin')||{}).value||'').trim(); if(nv_ && nv_!==v) userMap[v]=nv_; else delete userMap[v]; saveMap(diffMap());

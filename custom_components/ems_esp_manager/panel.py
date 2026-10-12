@@ -35,7 +35,7 @@ from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .entity_map import build_auto_map, ems_value_ids
+from .entity_map import build_auto_map, ems_entities, ems_value_ids
 from .const import (
     CONF_PANEL_ADMIN_ONLY,
     CONF_PANEL_SHOW_IN_SIDEBAR,
@@ -435,6 +435,25 @@ async def ws_get(hass: HomeAssistant, connection, msg) -> None:
     )
 
 
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/panel/check"})
+@websocket_api.async_response
+@_report_errors
+async def ws_check(hass: HomeAssistant, connection, msg) -> None:
+    """Read/write check: every EMS-ESP entity with value and writeable flag."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    result = None
+    for e in hass.config_entries.async_entries(DOMAIN):
+        if e.state is ConfigEntryState.LOADED:
+            try:
+                result = await ems_entities(e.runtime_data.api)
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("EMS-ESP entities not readable", exc_info=True)
+            if result is not None:
+                break
+    connection.send_result(msg["id"], {"entities": result})
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/panel/save",
@@ -565,7 +584,7 @@ async def async_setup_panel(hass: HomeAssistant, options: dict[str, Any]) -> Pan
         if not hass.data.get(f"{_DATA}_http"):
             hass.http.register_view(PanelView())
             hass.http.register_view(PanelAdminView())
-            for cmd in (ws_get, ws_save, ws_info, ws_upload, ws_restore, ws_reset):
+            for cmd in (ws_get, ws_check, ws_save, ws_info, ws_upload, ws_restore, ws_reset):
                 websocket_api.async_register_command(hass, cmd)
             hass.data[f"{_DATA}_http"] = True
     mgr.options = dict(options)
