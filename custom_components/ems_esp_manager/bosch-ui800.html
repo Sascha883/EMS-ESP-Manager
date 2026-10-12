@@ -76,6 +76,41 @@ svg{overflow:visible}
 .dots{position:absolute;top:438px;left:0;right:0;display:flex;justify-content:center;gap:14px;align-items:center}
 .dots i{width:8px;height:8px;border-radius:50%;background:#4a4f55}
 .dots i.on{background:var(--acc);width:12px;height:12px}
+
+/* ---------- kompakte Zuordnung (Dashboard-Register „Zuordnung“) ---------- */
+#mapx{display:none;position:fixed;inset:0;overflow:auto;background:#111;color:#e1e1e1;font:14px/1.4 Roboto,"Segoe UI",Arial,sans-serif}
+body.mapx #stage{display:none}
+body.mapx #mapx{display:block}
+#mapx .top{position:sticky;top:0;z-index:2;background:#111;padding:10px 14px 8px;border-bottom:1px solid #2c2c2c}
+#mapx h1{font-size:17px;font-weight:500;margin:0 0 8px}
+#mapx .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#mapx .chip{border:1px solid #3a3a3a;border-radius:14px;padding:3px 10px;cursor:pointer;font-size:13px;color:#cfcfcf;background:transparent}
+#mapx .chip.on{background:#03a9f4;border-color:#03a9f4;color:#fff}
+#mapx .chip b{font-weight:600}
+#mapx input.q{background:#1c1c1c;border:1px solid #3a3a3a;border-radius:14px;color:#eee;padding:4px 10px;font:inherit;font-size:13px;min-width:160px;flex:1;max-width:280px}
+#mapx .hint{color:#8a8a8a;font-size:12px;margin-top:6px}
+#mapx details{border-bottom:1px solid #222}
+#mapx summary{list-style:none;cursor:pointer;padding:8px 14px;display:flex;align-items:center;gap:8px;font-weight:500;background:#161616}
+#mapx summary::-webkit-details-marker{display:none}
+#mapx summary .cnt{margin-left:auto;display:flex;gap:6px;font-weight:400}
+#mapx summary::before{content:"›";display:inline-block;width:10px;transition:transform .15s;color:#888}
+#mapx details[open] summary::before{transform:rotate(90deg)}
+#mapx table{width:100%;border-collapse:collapse}
+#mapx td{padding:4px 8px;border-top:1px solid #1f1f1f;vertical-align:middle}
+#mapx td.f{padding-left:32px;width:30%}
+#mapx td.id{color:#9a9a9a;font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
+#mapx td.id .via{color:#03a9f4;font-family:inherit}
+#mapx td.val{width:14%;color:#bbb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+#mapx td.st{width:1%;white-space:nowrap}
+#mapx td.ed{width:1%;white-space:nowrap}
+#mapx .p{font-size:12px;padding:1px 8px;border-radius:9px;background:#1e3a1e;color:#9fe29f}
+#mapx .p.no{background:#3a1e1e;color:#f0a0a0}#mapx .p.na{background:#2a2a2a;color:#9a9a9a}
+#mapx button{font:inherit;font-size:12px;border:1px solid #3a3a3a;background:transparent;color:#cfcfcf;border-radius:12px;padding:2px 10px;cursor:pointer}
+#mapx button.pri{background:#03a9f4;border-color:#03a9f4;color:#fff}
+#mapx tr.edit td{background:#181818}
+#mapx tr.edit input{width:100%;box-sizing:border-box;background:#1c1c1c;border:1px solid #3a3a3a;border-radius:6px;color:#eee;padding:4px 8px;font:12px ui-monospace,Consolas,monospace}
+#mapx .empty{padding:20px 14px;color:#8a8a8a}
+@media (max-width:700px){#mapx td.val{display:none}#mapx td.f{padding-left:18px;width:40%}}
 /* Bildschirme */
 .scr{position:absolute;inset:0;background:var(--bg)}
 .body{position:absolute;top:80px;left:66px;right:66px;bottom:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#777 transparent;padding:0 0 12px}
@@ -160,7 +195,7 @@ svg{overflow:visible}
 .sday{width:42px;flex:none}
 .tbtn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:40px;border:1px solid #666;font-size:22px;cursor:pointer}
 .pill{font-size:13px;padding:2px 8px;border-radius:10px;background:#1e3a1e;color:#9fe29f}
-.pill.no{background:#3a1e1e;color:#f0a0a0}.pill.dm{background:#3a3000;color:#ffd866}
+.pill.no{background:#3a1e1e;color:#f0a0a0}.pill.na{background:#2a2a2a;color:#9a9a9a}.pill.dm{background:#3a3000;color:#ffd866}
 .btns{position:absolute;bottom:16px;left:86px;right:86px;display:flex;gap:20px}
 .btn{flex:1;height:52px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;border:1px solid #888}
 .btn.pri{background:var(--acc);border-color:var(--acc)}
@@ -220,6 +255,7 @@ body.portrait #dev{--st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bo
 
 </head>
 <body>
+<div id="mapx"></div>
 <div id="stage"><div id="dev">
   <div id="root"></div>
   <div id="ovl"></div>
@@ -246,7 +282,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.19";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.10.23";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -269,6 +305,7 @@ function toast(t,ms){ const el=$('#toast'); el.textContent=t; el.style.display='
 let settings = Object.assign({ advanced:false, brightness:100, saver:0, lock:false, mode:'auto', url:'', token:'', showMissing:false }, LS.get('settings',{}));
 function saveSettings(){ LS.set('settings',settings); applyDisplay(); }
 let userMap = Object.assign({}, ENTITY_OVERRIDES, LS.get('map',{}));
+let emsIds = null;               // vom Manager: Werte, die EMS-ESP überhaupt liefert (Kurznamen), null = unbekannt
 let autoMap = {};                // vom Manager: Standard-ID → echte ID (andere Entity-ID-Formate, englische Langnamen …)
 // Zuordnung / Heizkreisnamen: mit Manager in Home Assistant, sonst im Browser
 function mgrSave(data){
@@ -287,6 +324,7 @@ async function loadMgr(){
     if(r.is_admin && !Object.keys(r.hc_names||{}).length && Object.keys(localHc).length){ r.hc_names = localHc; await mgrSave({hc_names:localHc}); }
     userMap = Object.assign({}, ENTITY_OVERRIDES, r.map||{});
     autoMap = r.auto || {};
+    emsIds = Array.isArray(r.ems_ids) ? new Set(r.ems_ids) : null;
     LS.set('map', r.map||{});
     settings.hcNames = Object.assign({}, r.hc_names||{}); LS.set('settings',settings);
     MGR.is_admin = !!r.is_admin;
@@ -350,10 +388,14 @@ const resolved = {};             // Standard-ID → tatsächliche ID (oder null)
 // (thermostat_summertemp …), nicht je Heizkreis – EMS-ESP 3.9 liefert sie je nach Regler pro HK (#3257)
 const UI800_GLOBAL = ['hpoperatingmode','summertemp','instantstart','coolstart','heatondelay','heatoffdelay','coolondelay','cooloffdelay'];
 function R(id){                  // Entität auflösen
+  const m = /^(\w+)\.thermostat_hc\d+_(\w+)$/.exec(id);
+  // UI800-Werte: gibt es die anlagenweite Entität, ist sie die gültige – die HK-Entität steht bei
+  // EMS-ESP 3.8.x dann oft auf 0 (z. B. hc1_summertemp 0, summertemp 21; Forum 11.10.2026)
+  if(m && UI800_GLOBAL.includes(m[2]) && !userMap[id]){ const g = R1(m[1]+'.thermostat_'+m[2]); if(S[g] && S[g].state!=='unavailable') { resolved[id]=g; return g; } }
   const r0 = R1(id);
   if(S[r0]) return r0;
-  const m = /^(\w+)\.thermostat_hc\d+_(\w+)$/.exec(id);
-  if(m && UI800_GLOBAL.includes(m[2])){ const g = R1(m[1]+'.thermostat_'+m[2]); if(S[g]) { resolved[id]=g; return g; } }
+  // CS5800i/UI800 mit EMS-ESP 3.8.x: kein „hpoperatingstate“ – Betriebsart der WP (hpactivity) zeigt den Zustand
+  if(m && m[2]==='hpoperatingstate'){ const g = R1('sensor.boiler_hpactivity'); if(S[g]) { resolved[id]=g; return g; } }
   return r0;
 }
 function R1(id){
@@ -362,12 +404,25 @@ function R1(id){
   if(S[id]) { resolved[id]=id; return id; }
   // vom Manager über die EMS-ESP unique_id gefunden (Kurz-/Langnamen, Präfix, umbenannte Entitäten)
   if(autoMap[id] && S[autoMap[id]]) { resolved[id]=autoMap[id]; return autoMap[id]; }
-  // Fallback: gleiche Domain, object_id endet auf die Standard-object_id (z.B. Präfix "ems_esp_")
   const [dom,obj] = id.split('.');
+  // beschreibbare Texte (z. B. Datum/Uhrzeit des Reglers) legt EMS-ESP als text.* an, nicht als sensor.*
+  if(dom==='sensor'){ const alt='text.'+obj; const ra = S[alt] ? alt : (autoMap[alt] && S[autoMap[alt]] ? autoMap[alt] : null); if(ra){ resolved[id]=ra; return ra; } }
+  // Fallback: gleiche Domain, object_id endet auf die Standard-object_id (z.B. Präfix "ems_esp_")
   const cand = Object.keys(S).find(e=>e.startsWith(dom+'.') && e.endsWith('_'+obj));
   resolved[id] = cand||null;
   return cand||id;
 }
+// liefert EMS-ESP diesen Wert überhaupt? true/false, null = unbekannt
+function emsKnows(id){
+  if(!emsIds) return null;
+  const obj=(id.split('.')[1]||'');
+  if(!/^(boiler|thermostat|mixer|solar|heatpump|water)_/.test(obj)) return null;
+  if(emsIds.has(obj)) return true;
+  const m=/^thermostat_hc\d+_(\w+)$/.exec(obj);
+  if(m && UI800_GLOBAL.includes(m[1]) && emsIds.has('thermostat_'+m[1])) return true;
+  return false;
+}
+function mapState(id){ return has(id) ? 'ok' : (emsKnows(id)===false ? 'na' : 'miss'); }
 function has(id){ const r=R(id); return !!S[r] && S[r].state!=='unavailable'; }
 function st(id){ const e=S[R(id)]; return e?e.state:null; }
 function at(id,a){ const e=S[R(id)]; return e&&e.attributes?e.attributes[a]:undefined; }
@@ -798,6 +853,10 @@ const MENUS = {
     SEC('Weitere'),
     SW('switch.boiler_dhw_hpcircpump','HK-Pumpe an bei WW-Betrieb'),
     SW('switch.boiler_dhw_activated','Warmwasser freigegeben'),
+    SW('switch.boiler_dhw_onetime','Einmalladung'),
+    N('number.boiler_dhw_flowtempoffset','Vorlauftemp.-Offset',{adv:true}),
+    N('number.boiler_dhw_hyston','Einschalthysterese',{adv:true}),
+    N('number.boiler_dhw_hystoff','Ausschalthysterese',{adv:true}),
     RO(B('dhw_starts'),'Starts',{adv:true}),
     RO(B('dhw_workm'),'Laufzeit',{fmt:'h',adv:true}),
   ]},
@@ -844,6 +903,10 @@ const MENUS = {
     RO('binary_sensor.boiler_hpea0','Kondensatwannenheizung EA0',{bin:true}),
     RO(B('heatingpumpmod'),'Heizungspumpe Modulation',{adv:true}),
     RO(B('pc1flow'),'Durchfluss PC1',{adv:true}),
+    RO(B('selflowtemp'),'Vorlauf-Soll Wärmepumpe',{dec:1}),
+    RO(B('hptw1'),'TW1 Warmwasser',{dec:1}),
+    RO('binary_sensor.boiler_heatingactive','Heizbetrieb aktiv',{bin:true}),
+    RO('binary_sensor.boiler_tapwateractive','Warmwasserbetrieb aktiv',{bin:true}),
   ]},
   faults: { title:'Störungen', items:[
     RO(T('errorcode'),'Aktuelle Störung Anlage'),
@@ -1078,6 +1141,7 @@ function statusIcon(){
 function tempTxt(id,dec){ const v=nv(id); return v==null?'–':fmtN(v,dec==null?0:dec)+'°'; }
 
 function render(){
+  if(MGR_PAGE==='map'){ document.body.classList.add('mapx'); if(Date.now()-MX.last<3000){ clearTimeout(MX.rt); MX.rt=setTimeout(render,3000); return; } renderMapX(); return; }
   ACT=[]; const t=top_(); let h='';
   const V = {home:vHome, menu:()=>vMenu(t.id), edit:()=>vEdit(t), ledit:()=>vLEdit(t), hc:()=>vHC(t.n), dhwp:vDHW, extra:()=>vExtra(t),
     ov:vOverview, energy:()=>vEnergy(t), absent:vAbsent, vac:vVac, curve:()=>vCurve(t.n), outdoor:()=>vOutdoor(t), conn:()=>vConn(t),
@@ -1096,6 +1160,68 @@ document.addEventListener('click',ev=>{
   const el = ev.target.closest('[data-a]'); if(!el) return;
   if(settings.lock && !el.hasAttribute('data-lockok')){ toast('Tastensperre aktiv – Schloss 2 s gedrückt halten'); return; }
   const f = ACT[+el.dataset.a]; if(f) f(ev);
+});
+
+
+/* ---------- kompakte Zuordnung für das Dashboard-Register ---------- */
+const MX = { filter:null, q:'', grp:{}, edit:null, last:0, html:'' };
+function mxSet(k,v){ MX[k]=v; renderMapX(); }
+function renderMapX(){
+  const box=$('#mapx'); if(!box) return;
+  const ae=document.activeElement; if(ae && box.contains(ae) && ae.tagName==='INPUT' && ae.dataset.keep) return;
+  const all=mapIds(), stOf={}; all.forEach(id=>stOf[id]=mapState(id));
+  const n={ok:0,na:0,miss:0}; all.forEach(id=>n[stOf[id]]++);
+  if(!MX.filter) MX.filter = n.miss ? 'miss' : n.na ? 'prob' : 'all';   // Start: zuerst das, was man beheben kann
+  const q=MX.q.trim().toLowerCase();
+  const pass=id=>{ const s_=stOf[id];
+    if(MX.filter==='prob' && s_==='ok') return false;
+    if(MX.filter==='miss' && s_!=='miss') return false;
+    if(MX.filter==='na' && s_!=='na') return false;
+    if(q && !(mapLabel(id).toLowerCase().includes(q) || id.includes(q) || String(R(id)).includes(q))) return false;
+    return true; };
+  const chip=(k,l)=>`<button class="chip ${MX.filter===k?'on':''}" data-mx="f:${k}">${l}</button>`;
+  const pill=s_=> s_==='ok'?'<span class="p">OK</span>':s_==='na'?'<span class="p na" title="EMS-ESP liefert diesen Wert für diese Anlage nicht (Regler/Wärmepumpe unterstützt ihn nicht oder in EMS-ESP ausgeblendet)">nicht geliefert</span>':'<span class="p no" title="EMS-ESP liefert den Wert, aber in Home Assistant wurde keine passende Entität gefunden">fehlt in HA</span>';
+  let groups='';
+  for(const [k,v] of mapBuckets()){
+    const ids=v.ids.filter(pass).sort((x,y)=>mapLabel(x).localeCompare(mapLabel(y),'de'));
+    if(!ids.length) continue;
+    const c={ok:0,na:0,miss:0}; v.ids.forEach(id=>c[stOf[id]]++);
+    const open = (k in MX.grp) ? MX.grp[k] : !!(q || MX.filter!=='all');
+    const rows=ids.map(id=>{
+      const r=R(id), custom=!!userMap[id], via=r!==id?`<br><span class="via">→ ${esc(r)} · ${custom?'manuell':'automatisch'}</span>`:'';
+      const val=has(id)?(st(id)+(unit(id)?' '+unit(id):'')):'';
+      let row=`<tr><td class="f">${esc(mapLabel(id))}</td><td class="id">${esc(id)}${via}</td><td class="val" title="${esc(val)}">${esc(val)}</td><td class="st">${pill(stOf[id])}</td><td class="ed">${MGR&&MGR.is_admin!==false?`<button data-mx="e:${esc(id)}">Ändern</button>`:''}</td></tr>`;
+      if(MX.edit===id){
+        const dom=id.split('.')[0]; const cands=Object.keys(S).filter(e=>e.startsWith(dom+'.')||e.startsWith('text.')||e.startsWith('sensor.')).sort();
+        row+=`<tr class="edit"><td class="f">Eigene Entität</td><td colspan="2"><input id="mxin" data-keep="1" list="mxdl" value="${esc(userMap[id]||r)}" placeholder="z. B. ${esc(dom)}.…"><datalist id="mxdl">${cands.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></td>
+          <td colspan="2" style="white-space:nowrap"><button class="pri" data-mx="s:${esc(id)}">Speichern</button> <button data-mx="d:${esc(id)}">Standard</button> <button data-mx="x:">✕</button></td></tr>`;
+      }
+      return row; }).join('');
+    groups+=`<details ${open?'open':''} data-g="${k}"><summary data-mx="g:${k}">${esc(v.name)}<span class="cnt">${c.miss?`<span class="p no">${c.miss} fehlt</span>`:''}${c.na?`<span class="p na">${c.na} n. v.</span>`:''}<span class="p">${c.ok}/${v.ids.length}</span></span></summary><table>${rows}</table></details>`;
+  }
+  const custom=Object.keys(diffMap()).length;
+  const html=`<div class="top"><h1>Entitäten-Zuordnung · ${n.ok} von ${all.length} gefunden</h1>
+    <div class="chips">${chip('prob',`Probleme <b>${n.na+n.miss}</b>`)}${chip('miss',`Fehlt in HA <b>${n.miss}</b>`)}${chip('na',`Nicht geliefert <b>${n.na}</b>`)}${chip('all',`Alle <b>${all.length}</b>`)}
+      <input class="q" data-keep="1" placeholder="Suchen …" value="${esc(MX.q)}" id="mxq">
+      ${custom&&MGR&&MGR.is_admin!==false?`<button data-mx="r:">Eigene Zuordnungen zurücksetzen (${custom})</button>`:''}</div>
+    ${MX.msg?`<div class="hint" style="color:#9fe29f">${esc(MX.msg)}</div>`:''}
+    <div class="hint">${emsIds?'<b>Fehlt in HA</b>: EMS-ESP liefert den Wert, aber Home Assistant hat keine passende Entität (Zuordnung ändern oder MQTT-Discovery prüfen). <b>Nicht geliefert</b>: Ihr Regler / Ihre Wärmepumpe stellt den Wert nicht bereit – das Panel blendet ihn aus.':'Welche Werte EMS-ESP liefert, konnte nicht abgefragt werden – „fehlt“ kann auch „wird nicht geliefert“ bedeuten.'}</div></div>
+    ${groups||'<div class="empty">Keine Einträge für diesen Filter.</div>'}`;
+  MX.last=Date.now();
+  if(html===MX.html) return;
+  MX.html=html; box.innerHTML=html;
+  const qi=$('#mxq'); if(qi){ qi.oninput=e=>{ MX.q=e.target.value; clearTimeout(MX.t); MX.t=setTimeout(()=>{ renderMapX(); const x=$('#mxq'); if(x){ x.focus(); x.setSelectionRange(x.value.length,x.value.length);} },250); }; }
+}
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('#mapx [data-mx]'); if(!b) return;
+  const [k,...rest]=b.dataset.mx.split(':'); const v=rest.join(':');
+  if(k==='g'){ ev.preventDefault(); const d=b.closest('details'); MX.grp[v]=!d.open; renderMapX(); return; }
+  if(k==='f'){ MX.grp={}; mxSet('filter',v); }
+  else if(k==='e') mxSet('edit', MX.edit===v?null:v);
+  else if(k==='x') mxSet('edit',null);
+  else if(k==='s'){ const val=($('#mxin')||{}).value||''; const nv_=val.trim(); if(nv_ && nv_!==v) userMap[v]=nv_; else delete userMap[v]; saveMap(diffMap()); MX.msg=has(v)?'✓ Zuordnung gespeichert: '+mapLabel(v):'Gespeichert – aber die Entität „'+(userMap[v]||v)+'“ gibt es nicht.'; MX.edit=null; renderMapX(); }
+  else if(k==='d'){ delete userMap[v]; saveMap(diffMap()); MX.edit=null; renderMapX(); }
+  else if(k==='r'){ if(confirm('Alle eigenen Zuordnungen löschen?')){ userMap=Object.assign({},ENTITY_OVERRIDES); saveMap({}); renderMapX(); } }
 });
 
 /* ---------- Startseite ---------- */
@@ -1705,13 +1831,16 @@ function mapBuckets(){
 function vMap(t){
   const miss = t.filter==='miss';
   const all = mapIds(), found = all.filter(has).length, custom = Object.keys(diffMap()).length;
+  const naAll = all.filter(id=>mapState(id)==='na').length, missAll = all.length-found-naAll;
   const rows = [...mapBuckets()].map(([k,v])=>{
-    const f=v.ids.filter(has).length, n=v.ids.length, nm=n-f;
-    if(miss && !nm) return '';
-    return `<div class="row" data-a="${a(()=>push({type:'mapgrp',g:k,filter:t.filter}))}"><span class="k">${esc(v.name)}<small>${f} von ${n} gefunden</small></span><span class="v">${nm?`<span class="pill no">${nm} fehlt</span>`:'<span class="pill">OK</span>'}${I.chevR}</span></div>`;
+    const st_=v.ids.map(mapState), f=st_.filter(x=>x==='ok').length, n=v.ids.length, na=st_.filter(x=>x==='na').length, nm=n-f-na;
+    if(miss && !nm && !na) return '';
+    const pill = nm ? `<span class="pill no">${nm} fehlt</span>` : na ? `<span class="pill na">${na} n. v.</span>` : '<span class="pill">OK</span>';
+    return `<div class="row" data-a="${a(()=>push({type:'mapgrp',g:k,filter:t.filter}))}"><span class="k">${esc(v.name)}<small>${f} von ${n} gefunden${na?` · ${na} liefert die Anlage nicht`:''}</small></span><span class="v">${pill}${I.chevR}</span></div>`;
   }).join('');
   return header(miss?'Fehlende Entitäten':'Entitäten-Zuordnung')+`<div class="body"><div class="list">
-    <div class="row ro"><span class="k">Gefunden<small>${custom} eigene Zuordnung${custom===1?'':'en'}</small></span><span class="v d">${found} von ${all.length}</span></div>
+    <div class="row ro"><span class="k">Gefunden<small>${custom} eigene Zuordnung${custom===1?'':'en'}${emsIds?` · ${naAll} liefert die Anlage nicht · ${missAll} fehlen in HA`:''}</small></span><span class="v d">${found} von ${all.length}</span></div>
+    ${emsIds?'':'<div class="note">Hinweis: Welche Werte EMS-ESP liefert, konnte nicht abgefragt werden – „fehlt“ kann daher auch „liefert die Anlage nicht“ bedeuten.</div>'}
     <div class="row" data-a="${a(()=>{ t.filter=miss?'all':'miss'; render(); })}"><span class="k">Nur fehlende anzeigen</span><span class="v"><span class="tog ${miss?'on':''}"></span></span></div>
     ${rows||'<div class="note">Alle Entitäten gefunden.</div>'}</div></div>`;
 }
@@ -1719,8 +1848,8 @@ function vMapGroup(t){
   const v = mapBuckets().get(t.g) || {name:'Zuordnung', ids:[]};
   let ids = v.ids.slice().sort((x,y)=>mapLabel(x).localeCompare(mapLabel(y),'de'));
   if(t.filter==='miss') ids = ids.filter(id=>!has(id));
-  const rows = ids.map(id=>{ const r=R(id), ok=has(id), custom=!!userMap[id];
-    return `<div class="row" data-a="${a(()=>push({type:'mapedit',id}))}"><span class="k" style="font-size:18px">${esc(mapLabel(id))}<small>${esc(r!==id?r:id)}${r!==id?(custom?' · manuell':' · automatisch'):''}</small></span><span class="v"><span class="pill ${ok?'':'no'}">${ok?'OK':'fehlt'}</span>${I.chevR}</span></div>`; }).join('');
+  const rows = ids.map(id=>{ const r=R(id), ok=has(id), custom=!!userMap[id], ms=mapState(id);
+    return `<div class="row" data-a="${a(()=>push({type:'mapedit',id}))}"><span class="k" style="font-size:18px">${esc(mapLabel(id))}<small>${esc(r!==id?r:id)}${r!==id?(custom?' · manuell':' · automatisch'):''}</small></span><span class="v"><span class="pill ${ms==='ok'?'':ms==='na'?'na':'no'}" title="${ms==='na'?'EMS-ESP liefert diesen Wert für diese Anlage nicht':''}">${ms==='ok'?'OK':ms==='na'?'nicht geliefert':'fehlt'}</span>${I.chevR}</span></div>`; }).join('');
   return header(v.name)+`<div class="body"><div class="list">${rows||'<div class="note">Keine fehlenden Entitäten in dieser Gruppe.</div>'}</div></div>`;
 }
 function vMapEdit(t){

@@ -35,7 +35,7 @@ from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .entity_map import build_auto_map
+from .entity_map import build_auto_map, ems_value_ids
 from .const import (
     CONF_PANEL_ADMIN_ONLY,
     CONF_PANEL_SHOW_IN_SIDEBAR,
@@ -396,6 +396,19 @@ def _report_errors(func):
     return wrapper
 
 
+async def _ems_ids(hass: HomeAssistant) -> list[str] | None:
+    """Values EMS-ESP delivers (short-name object ids) – None if unknown."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    for e in hass.config_entries.async_entries(DOMAIN):
+        if e.state is ConfigEntryState.LOADED:
+            try:
+                return await ems_value_ids(e.runtime_data.api)
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("EMS-ESP values not readable", exc_info=True)
+    return None
+
+
 def _mgr_or_error(hass: HomeAssistant, connection, msg) -> PanelManager | None:
     mgr = _get(hass)
     if mgr is None:
@@ -415,6 +428,7 @@ async def ws_get(hass: HomeAssistant, connection, msg) -> None:
         {
             "map": mgr.data["map"],
             "auto": build_auto_map(hass),
+            "ems_ids": await _ems_ids(hass),
             "hc_names": mgr.data["hc_names"],
             "is_admin": connection.user.is_admin,
         },
