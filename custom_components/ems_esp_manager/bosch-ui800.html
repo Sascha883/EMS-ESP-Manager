@@ -316,7 +316,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.29";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.10.30";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -1206,8 +1206,14 @@ const MX_W = { ok:'beschreibbar', ha_ro:'EMS-ESP erlaubt Schreiben, die HA-Entit
 const MX_WDOM = ['number','select','switch','text','input_number','input_boolean','input_select'];
 function mxEms(id){ if(!MX.chk) return null; const obj=(id.split('.')[1]||''); if(MX.chk[obj]) return MX.chk[obj];
   const m=/^thermostat_hc\d+_(\w+)$/.exec(obj); if(m && UI800_GLOBAL.includes(m[1]) && MX.chk['thermostat_'+m[1]]) return MX.chk['thermostat_'+m[1]]; return null; }
+// EMS-ESP-Wert ↔ HA-Zustand sprachunabhängig vergleichen (EMS-ESP übersetzt z. B. „aus“, HA-Schalter melden „off“)
+function mxEq(e, hs){
+  if(typeof e.b==='boolean'){ const s_=String(hs.state).toLowerCase(); if(s_==='on'||s_==='off') return e.b===(s_==='on'); }
+  if(typeof e.i==='number'){ const o=(hs.attributes||{}).options; if(Array.isArray(o) && o.includes(hs.state)) return o.indexOf(hs.state)===e.i; }
+  return mxSame(e.v, hs.state);
+}
 function mxSame(a,b){ if(a==null||b==null) return false;
-  const B=x=>{ x=String(x).trim().toLowerCase(); return x==='true'||x==='on'||x==='1'?'on':x==='false'||x==='off'||x==='0'?'off':x; };
+  const B=x=>{ x=String(x).trim().toLowerCase(); return ['true','on','1','an','ein','aan','på','wł','zap','áno','ano','açık','acceso','be'].includes(x)?'on':['false','off','0','aus','uit','av','wył','vyp','nie','kapalı','spento','ki'].includes(x)?'off':x; };
   const fa=parseFloat(a), fb=parseFloat(b);
   if(!isNaN(fa)&&!isNaN(fb)&&/^-?[\d.]+$/.test(String(a).trim())&&/^-?[\d.]+$/.test(String(b).trim())) return Math.abs(fa-fb)<0.051;
   return B(a)===B(b); }
@@ -1217,7 +1223,7 @@ function mxCheck(id){
   const e=mxEms(id), r=R(id), hs=S[r], haOk=!!hs && hs.state!=='unavailable' && hs.state!=='unknown';
   const wants=MX_WDOM.includes(id.split('.')[0]), haW=MX_WDOM.includes(r.split('.')[0]);
   if(!e){ const known=emsKnows(id); if(known===null) return {r:'nocheck', w:'nocheck', e:null}; return {r:haOk?'ok':'na', w:wants?(haOk?'nocheck':'na'):'show', e:null}; }
-  let rd = !e.r ? 'hidden' : (!('v' in e) && !haOk) ? 'na' : !haOk ? 'noha' : !('v' in e) ? 'empty' : (e.w && !mxSame(e.v, hs.state)) ? 'diff' : 'ok';
+  let rd = !e.r ? 'hidden' : (!('v' in e) && !haOk) ? 'na' : !haOk ? 'noha' : !('v' in e) ? 'empty' : (e.w && !mxEq(e, hs)) ? 'diff' : 'ok';
   let wr = rd==='na' ? 'na' : !wants ? 'show' : !e.w ? 'ems_ro' : !haW ? 'ha_ro' : haOk ? 'ok' : 'noha';
   return {r:rd, w:wr, e};
 }
@@ -1246,7 +1252,7 @@ async function mxWriteTest(id){
     await new Promise(x=>setTimeout(x,3000));
     const rr=await conn.msg({type:'ems_esp_manager/panel/check'}); if(rr&&rr.entities){ MX.chk=rr.entities; MX.chkAt=new Date(); }
     const c=mxCheck(id);
-    MX.wmsg = c && c.e && 'v' in c.e && mxSame(c.e.v, st(id)) ? '✓ Schreibbefehl angenommen – EMS-ESP und HA melden denselben Wert ('+st(id)+').' : '⚠ Befehl gesendet, aber EMS-ESP meldet '+(c&&c.e&&'v' in c.e?'„'+c.e.v+'“':'keinen Wert')+' – HA zeigt „'+st(id)+'“.';
+    MX.wmsg = c && c.e && 'v' in c.e && S[R(id)] && mxEq(c.e, S[R(id)]) ? '✓ Schreibbefehl angenommen – EMS-ESP und HA melden denselben Wert ('+st(id)+').' : '⚠ Befehl gesendet, aber EMS-ESP meldet '+(c&&c.e&&'v' in c.e?'„'+c.e.v+'“':'keinen Wert')+' – HA zeigt „'+st(id)+'“.';
   }catch(e){ MX.wmsg='✗ Schreiben fehlgeschlagen: '+((e&&e.message)||e); }
   MX.html=''; renderMapX(); }
 function mxPill(s_){ return s_==='ok'?'<span class="mx-p">OK</span>':s_==='na'?'<span class="mx-p mx-nv" title="EMS-ESP liefert diesen Wert für diese Anlage nicht">nicht geliefert</span>':'<span class="mx-p mx-no" title="EMS-ESP liefert den Wert, aber in Home Assistant fehlt die Entität">fehlt in HA</span>'; }

@@ -172,6 +172,11 @@ async def ems_entities(api) -> dict[str, dict] | None:
             }
             if "value" in info:
                 item["v"] = info["value"]
+            # language independent values: bool (true/false) and enum index
+            if isinstance(info.get("bool"), bool):
+                item["b"] = info["bool"]
+            if isinstance(info.get("index"), int):
+                item["i"] = info["index"]
             for src, dst in (("min", "min"), ("max", "max"), ("uom", "u")):
                 if src in info:
                     item[dst] = info[src]
