@@ -1,0 +1,139 @@
+{
+  "config": {
+    "flow_title": "EMS-ESP ({host})",
+    "step": {
+      "user": {
+        "title": "EMS-ESP verbinden",
+        "description": "IP-Adresse (oder Hostname) des EMS-ESP und ein Benutzer mit Admin-Rechten. Standard ab Werk: admin / admin.",
+        "data": {
+          "host": "IP-Adresse / Hostname",
+          "username": "Benutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "host": "z. B. 192.168.178.42 oder ems-esp.local",
+          "username": "Benutzer muss Admin sein (für Firmware-Update und Neustart)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "EMS-ESP Anmeldung erneuern",
+        "description": "Die Anmeldung am EMS-ESP ist nicht mehr gültig. Bitte Zugangsdaten erneut eingeben.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      },
+      "reconfigure": {
+        "title": "EMS-ESP ändern",
+        "data": {
+          "host": "IP-Adresse / Hostname",
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "EMS-ESP nicht erreichbar. IP-Adresse prüfen.",
+      "invalid_auth": "Benutzername oder Passwort falsch.",
+      "not_admin": "Dieser Benutzer hat keine Admin-Rechte im EMS-ESP.",
+      "unknown": "Unerwarteter Fehler."
+    },
+    "abort": {
+      "already_configured": "Dieser EMS-ESP ist bereits eingerichtet.",
+      "reauth_successful": "Anmeldung erneuert.",
+      "reconfigure_successful": "Einstellungen gespeichert."
+    }
+  },
+  "entity": {
+    "button": {
+      "restart": {
+        "name": "EMS-ESP neu starten"
+      },
+      "fetch_values": {
+        "name": "Alle Werte neu abrufen"
+      },
+      "check_updates": {
+        "name": "Updates prüfen"
+      },
+      "install_latest": {
+        "name": "Update installieren"
+      },
+      "install_selected": {
+        "name": "Version installieren"
+      },
+      "clear_log": {
+        "name": "Log leeren"
+      }
+    },
+    "select": {
+      "stable_version": {
+        "name": "Version auswählen"
+      },
+      "watch_mode": {
+        "name": "Bus-Mitschnitt"
+      },
+      "log_level": {
+        "name": "Log-Level"
+      },
+      "tx_mode": {
+        "name": "Tx-Modus (Senden)"
+      }
+    },
+    "binary_sensor": {
+      "update_available": {
+        "name": "Firmware-Status"
+      }
+    },
+    "sensor": {
+      "system_state": {
+        "name": "Systemzustand"
+      },
+      "firmware_installed": {
+        "name": "Installierte Firmware"
+      },
+      "firmware_latest": {
+        "name": "Neueste Firmware"
+      },
+      "update_progress": {
+        "name": "Update-Fortschritt"
+      },
+      "hardware": {
+        "name": "Hardware"
+      },
+      "bus_status": {
+        "name": "EMS-Bus"
+      },
+      "num_devices": {
+        "name": "Anzahl EMS-Geräte"
+      },
+      "wifi_rssi": {
+        "name": "WLAN-Signal"
+      },
+      "uptime": {
+        "name": "Laufzeit seit Neustart"
+      },
+      "free_heap": {
+        "name": "Freier Speicher"
+      },
+      "bus_log": {
+        "name": "Bus-Log"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EMS-ESP Dashboard",
+        "description": "Legt fest, wer das Dashboard „EMS-ESP“ in der Seitenleiste sieht.",
+        "data": {
+          "In Sidebar Benutzer anzeigen": "In Sidebar Benutzer anzeigen",
+          "In Sidebar Admin anzeigen": "In Sidebar Admin anzeigen"
+        },
+        "data_description": {
+          "In Sidebar Benutzer anzeigen": "Aus: kein Eintrag in der Seitenleiste. Das Dashboard bleibt für Administratoren unter /ems-esp erreichbar.",
+          "In Sidebar Admin anzeigen": "An: nur Administratoren sehen das Dashboard. Benutzer ohne Administratorrechte sehen es nicht und können es auch nicht öffnen."
+        }
+      }
+    }
+  }
+}
