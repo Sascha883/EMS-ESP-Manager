@@ -81,12 +81,12 @@ svg{overflow:visible}
 #mapx{display:none;position:fixed;inset:0;overflow:auto;background:#000;color:#fff;font-size:15px;line-height:1.3}
 body.mapx #stage{display:none}
 body.mapx #mapx{display:block}
-#mapx .mh{position:sticky;top:0;z-index:2;background:#000;height:44px;width:50%;min-width:460px;margin:0 auto}
+#mapx .mh{position:sticky;top:0;z-index:2;background:#000;height:44px;max-width:480px;margin:0 auto;zoom:2}
 #mapx .mh::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--rainbow)}
 #mapx .mh .t{position:absolute;left:50%;top:10px;transform:translateX(-50%);font-size:16px;white-space:nowrap}
 #mapx .mh .b{position:absolute;left:4px;top:8px;width:26px;height:26px;cursor:pointer;color:#fff}
 #mapx .mh .b svg{width:22px;height:22px}
-#mapx .ml{width:calc(50% - 20px);min-width:440px;margin:4px auto 24px}
+#mapx .ml{max-width:460px;margin:4px auto 24px;zoom:2}
 #mapx .r{min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 6px;border-bottom:1px solid var(--sep,#2a2a2a);cursor:pointer}
 #mapx .r:hover{background:#0d0d0d}
 #mapx .r.ro{cursor:default}#mapx .r.ro:hover{background:none}
@@ -96,7 +96,7 @@ body.mapx #mapx{display:block}
 #mapx .r .v{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:14px;color:#e8e8e8}
 #mapx .r .v .val{color:#9a9a9a;font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis}
 #mapx .r .v svg{width:9px;height:15px;opacity:.8}
-#mapx .tabs{display:flex;gap:18px;justify-content:center;font-size:14px;padding:10px 0 4px;flex-wrap:wrap}
+#mapx .tabs{position:static;inset:auto;height:auto;width:auto;display:flex;gap:18px;justify-content:center;font-size:14px;padding:10px 0 4px;flex-wrap:wrap}
 #mapx .tabs span{cursor:pointer;padding-bottom:2px;color:#ddd}
 #mapx .tabs span.on{color:var(--acc,#1e88e5);border-bottom:2px solid var(--acc,#1e88e5)}
 #mapx .tabs b{font-weight:400;color:#888;margin-left:3px}
@@ -115,7 +115,7 @@ body.mapx #mapx{display:block}
 #mapx .bt{display:flex;gap:10px;margin-top:14px}
 #mapx .bt div{flex:1;text-align:center;border:1px solid #555;padding:8px 0;cursor:pointer;font-size:14px}
 #mapx .bt div.pri{background:var(--acc,#1e88e5);border-color:var(--acc,#1e88e5)}
-@media (max-width:600px){#mapx .mh{width:auto;min-width:0;margin:0 8px}#mapx .ml{width:auto;min-width:0;margin:4px 10px 24px}}
+@media (max-width:1100px){#mapx .mh,#mapx .ml{zoom:1.5}}@media (max-width:700px){#mapx .mh{zoom:1;margin:0 8px}#mapx .ml{zoom:1;margin:4px 10px 24px}}
 /* Bildschirme */
 .scr{position:absolute;inset:0;background:var(--bg)}
 .body{position:absolute;top:80px;left:66px;right:66px;bottom:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#777 transparent;padding:0 0 12px}
@@ -287,7 +287,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.25";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.10.26";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
