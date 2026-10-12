@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/banner.jpg" alt="EMS-ESP Manager – Haustechnik aus der Praxis" width="100%">
-</p>
-
 # EMS-ESP Manager für Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
