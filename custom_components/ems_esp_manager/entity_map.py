@@ -145,3 +145,35 @@ async def ems_value_ids(api) -> list[str] | None:
         return None
     _CACHE.update(t=time.monotonic(), ids=sorted(ids))
     return _CACHE["ids"]  # type: ignore[return-value]
+
+
+# ---------------------------------------------------------------------------
+# Check: can the values be read and written?  (GET /api/<device>/entities)
+# EMS-ESP returns every entity with value, "readable" and "writeable" flags.
+async def ems_entities(api) -> dict[str, dict] | None:
+    """Object id (device[_tag]_short) -> {v, w, r, t, min, max, u}; None = EMS-ESP not reachable."""
+    out: dict[str, dict] = {}
+    ok = False
+    for dev in EMS_DEVICES:
+        try:
+            status, data = await api._request("GET", f"/api/{dev}/entities")  # noqa: SLF001
+        except Exception:  # noqa: BLE001
+            continue
+        if status != 200 or not isinstance(data, dict) or "message" in data:
+            continue
+        ok = True
+        for key, info in data.items():
+            if not isinstance(info, dict):
+                continue
+            item = {
+                "w": bool(info.get("writeable")),
+                "r": info.get("readable", True) is not False,
+                "t": info.get("type"),
+            }
+            if "value" in info:
+                item["v"] = info["value"]
+            for src, dst in (("min", "min"), ("max", "max"), ("uom", "u")):
+                if src in info:
+                    item[dst] = info[src]
+            out[f"{dev}_{str(key).replace('.', '_')}"] = item
+    return out if ok else None
