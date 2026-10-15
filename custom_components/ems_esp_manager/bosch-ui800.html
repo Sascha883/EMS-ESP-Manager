@@ -137,6 +137,7 @@ body.mapx #mapx{display:block}
 #mapx .mx-btn{flex:0 0 auto;border:1px solid var(--acc);color:#fff;background:var(--acc);border-radius:4px;padding:6px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
 #mapx .mx-btn.mx-ghost{background:none;color:#cfe6f7}
 #mapx .mx-btn.mx-dis{opacity:.5;pointer-events:none}
+#mapx .mx-stats.mx-s3{grid-template-columns:repeat(3,1fr)}
 #mapx .mx-stats.mx-s2{grid-template-columns:repeat(4,1fr);margin-top:0}
 #mapx .mx-st.mx-rbad .mx-num,#mapx .mx-st.mx-wbad .mx-num{color:#f2c46a}
 #mapx .mx-st.mx-rok .mx-num,#mapx .mx-st.mx-wok .mx-num{color:#7fd06a}
@@ -316,7 +317,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.31";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.11.02";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -341,7 +342,9 @@ function saveSettings(){ LS.set('settings',settings); applyDisplay(); }
 let userMap = Object.assign({}, ENTITY_OVERRIDES, LS.get('map',{}));
 let emsIds = null;               // vom Manager: Werte, die EMS-ESP überhaupt liefert (Kurznamen), null = unbekannt
 let emsDevices = null;           // vom Manager: erkannte EMS-Geräte (Anlagenprofil)
-let haEms = null;                // vom Manager: alle EMS-ESP-Entitäten in HA
+let haEms = null;
+let haEmsOff = [];
+let createdIds = new Set();      // vom Manager selbst angelegte Entitäten (Standard-IDs)               // vom Manager: EMS-ESP-Entitäten, die in HA deaktiviert sind                // vom Manager: alle EMS-ESP-Entitäten in HA
 let autoMap = {};                // vom Manager: Standard-ID → echte ID (andere Entity-ID-Formate, englische Langnamen …)
 // Zuordnung / Heizkreisnamen: mit Manager in Home Assistant, sonst im Browser
 function mgrSave(data){
@@ -363,6 +366,9 @@ async function loadMgr(){
     emsIds = Array.isArray(r.ems_ids) ? new Set(r.ems_ids) : null;
     emsDevices = Array.isArray(r.devices) ? r.devices : null;
     haEms = Array.isArray(r.ha_ems) && r.ha_ems.length ? new Set(r.ha_ems) : null;
+    haEmsOff = Array.isArray(r.ha_ems_off) ? r.ha_ems_off : [];
+    createdIds = new Set(Array.isArray(r.created) ? r.created : []);
+    if(r.check && r.check.entities && !MX.chk){ MX.chk = r.check.entities; MX.chkAt = r.check.t ? new Date(r.check.t*1000) : new Date(); }
     LS.set('map', r.map||{});
     settings.hcNames = Object.assign({}, r.hc_names||{}); LS.set('settings',settings);
     MGR.is_admin = !!r.is_admin;
@@ -446,7 +452,12 @@ function R1(id){
   // beschreibbare Texte (z. B. Datum/Uhrzeit des Reglers) legt EMS-ESP als text.* an, nicht als sensor.*
   if(dom==='sensor'){ const alt='text.'+obj; const ra = S[alt] ? alt : (autoMap[alt] && S[autoMap[alt]] ? autoMap[alt] : null); if(ra){ resolved[id]=ra; return ra; } }
   // Fallback: gleiche Domain, object_id endet auf die Standard-object_id (z.B. Präfix "ems_esp_")
-  const cand = Object.keys(S).find(e=>e.startsWith(dom+'.') && e.endsWith('_'+obj));
+  let cand = Object.keys(S).find(e=>e.startsWith(dom+'.') && e.endsWith('_'+obj));
+  // Anzeige-Werte, die EMS-ESP als beschreibbar anlegt (z. B. boiler_selflowtemp → number.*)
+  if(!cand && (dom==='sensor'||dom==='binary_sensor')){
+    for(const d of ['number','select','switch','text','sensor','binary_sensor']){ if(d===dom) continue;
+      const alt=d+'.'+obj; if(S[alt]){ cand=alt; break; } if(autoMap[alt] && S[autoMap[alt]]){ cand=autoMap[alt]; break; } }
+  }
   resolved[id] = cand||null;
   return cand||id;
 }
@@ -1205,7 +1216,7 @@ document.addEventListener('click',ev=>{
 const MX = { filter:null, q:'', view:[{t:'ov'}], last:0, html:'', msg:'', chk:null, chkAt:null, busy:false, wmsg:'' };
 const mxTop = () => MX.view[MX.view.length-1];
 const MX_TXT = { all:'Alle', ok:'Gefunden', miss:'Fehlt in HA', na:'Nicht geliefert', rok:'Lesen OK', rbad:'Lesen Problem', wok:'Schreiben OK', wbad:'Schreiben Problem' };
-const MX_R = { ok:'wird gelesen', diff:'HA-Wert weicht von EMS-ESP ab', empty:'EMS-ESP kennt den Wert, hat aber noch keinen Inhalt', noha:'EMS-ESP liefert, in HA fehlt die Entität', na:'wird von der Anlage nicht geliefert', hidden:'in EMS-ESP für API/MQTT ausgeblendet', nocheck:'nicht über EMS-ESP prüfbar' };
+const MX_R = { ok:'wird gelesen', diff:'HA-Wert weicht von EMS-ESP ab', empty:'EMS-ESP kennt den Wert, hat aber noch keinen Inhalt', noha:'EMS-ESP liefert den Wert, in HA gibt es dazu keine Entität', haoff:'Entität ist in Home Assistant deaktiviert', na:'wird von der Anlage nicht geliefert', hidden:'in EMS-ESP für API/MQTT ausgeblendet', nocheck:'nicht über EMS-ESP prüfbar' };
 const MX_W = { ok:'beschreibbar', ha_ro:'EMS-ESP erlaubt Schreiben, die HA-Entität ist aber nur lesend', ems_ro:'in EMS-ESP schreibgeschützt (nur lesen)', show:'nur Anzeige – wird nicht geschrieben', nocheck:'nicht über EMS-ESP prüfbar' };
 const MX_WDOM = ['number','select','switch','text','input_number','input_boolean','input_select'];
 function isUI800(){ if(emsIds && (emsIds.has('thermostat_hpoperatingmode')||emsIds.has('thermostat_summertemp'))) return true;
@@ -1232,16 +1243,39 @@ function mxCheck(id){
   const e=mxEms(id), r=R(id), hs=S[r], haOk=!!hs && hs.state!=='unavailable' && hs.state!=='unknown';
   const wants=MX_WDOM.includes(id.split('.')[0]), haW=MX_WDOM.includes(r.split('.')[0]);
   if(!e){ const known=emsKnows(id); if(known===null) return {r:'nocheck', w:'nocheck', e:null}; return {r:haOk?'ok':'na', w:wants?(haOk?'nocheck':'na'):'show', e:null}; }
-  let rd = !e.r ? 'hidden' : (!('v' in e) && !haOk) ? 'na' : !haOk ? 'noha' : !('v' in e) ? 'empty' : (e.w && !mxEq(e, hs)) ? 'diff' : 'ok';
+  let rd = !e.r ? 'hidden' : (!haOk && mxOff(id)) ? 'haoff' : (!('v' in e) && !haOk) ? 'na' : !haOk ? 'noha' : !('v' in e) ? 'empty' : (e.w && !mxEq(e, hs)) ? 'diff' : 'ok';
   let wr = rd==='na' ? 'na' : !wants ? 'show' : !e.w ? 'ems_ro' : !haW ? 'ha_ro' : haOk ? 'ok' : 'noha';
   return {r:rd, w:wr, e};
 }
-const mxRbad = c => c && ['diff','empty','noha','hidden'].includes(c.r);
+const mxRbad = c => c && ['diff','empty','noha','hidden','haoff'].includes(c.r);
+function mxOff(id){ const obj=(id.split('.')[1]||''); return haEmsOff.find(e=>{ const o=e.split('.')[1]||''; return o===obj || o.endsWith('_'+obj); })||null; }
 const mxWbad = c => c && ['ha_ro','ems_ro'].includes(c.w);
 function mxCPills(id){ const c=mxCheck(id); if(!c) return '';
   const rp = c.r==='na'||c.r==='nocheck' ? '' : `<span class="mx-c${mxRbad(c)?' mx-bad':''}" title="Lesen: ${esc(MX_R[c.r]||'')}">L${mxRbad(c)?' !':' ✓'}</span>`;
   const wp = c.w==='show'||c.w==='na'||c.w==='nocheck'||c.w==='noha' ? '' : `<span class="mx-c${mxWbad(c)?' mx-bad':''}" title="Schreiben: ${esc(MX_W[c.w]||'')}">S${mxWbad(c)?' !':' ✓'}</span>`;
   return rp+wp; }
+// beim UI800 werden die Anlagenwerte (thermostat_<name>) angelegt, nicht die leeren Heizkreis-Werte
+function mxCreateId(id){ const g=/^(\w+)\.thermostat_hc\d+_(\w+)$/.exec(id); return g && UI800_GLOBAL.includes(g[2]) && isUI800() ? g[1]+'.thermostat_'+g[2] : id; }
+function mxCreatable(ids){ const seen=new Set(); return ids.filter(id=>{ const c=mxCheck(id), k=mxCreateId(id); if(!c || c.r!=='noha' || !c.e || userMap[id] || createdIds.has(k) || seen.has(k)) return false; seen.add(k); return true; }); }
+async function mxCreate(ids){
+  if(!conn.msg || !ids.length) return;
+  MX.busy=true; MX.wmsg=''; MX.html=''; renderMapX();
+  try{
+    const labels={}, cids=ids.map(id=>{ const k=mxCreateId(id); labels[k]=mapLabel(id); return k; });
+    const r=await conn.msg({type:'ems_esp_manager/panel/create', ids:cids, labels});
+    const ok=Object.keys(r.created||{}).length, bad=Object.entries(r.errors||{});
+    MX.msg = (ok?`✓ ${ok} Entität${ok===1?'':'en'} in Home Assistant angelegt.`:'') + (bad.length?` ${bad.length} nicht möglich: `+bad.map(([k,v])=>mapLabel(k)+' ('+v+')').join(', '):'');
+    MX.wmsg = MX.msg;
+    await loadMgr();
+  }catch(e){ MX.msg = MX.wmsg = 'Anlegen fehlgeschlagen: '+((e&&e.message)||e); }
+  MX.busy=false; for(const k in resolved) delete resolved[k]; MX.html=''; renderMapX();
+}
+async function mxUncreate(id){
+  if(!conn.msg) return;
+  try{ await conn.msg({type:'ems_esp_manager/panel/uncreate', id}); MX.wmsg='Vom Manager angelegte Entität entfernt.'; await loadMgr(); }
+  catch(e){ MX.wmsg='Entfernen fehlgeschlagen: '+((e&&e.message)||e); }
+  for(const k in resolved) delete resolved[k]; MX.html=''; renderMapX();
+}
 async function mxRunCheck(){
   if(!conn.msg){ MX.msg='Prüfung nur in Home Assistant möglich.'; MX.html=''; renderMapX(); return; }
   MX.busy=true; MX.html=''; renderMapX();
@@ -1292,6 +1326,10 @@ function mxEditCheck(id){
     ${c.e?`<div><span>Wert EMS-ESP</span><span>${'v' in e?esc(String(e.v)):'–'}</span></div>`:''}
     <div><span>Wert Home Assistant</span><span>${esc(st(id)??'–')}</span></div>
     ${mm?`<div><span>Bereich</span><span>${esc(mm)}</span></div>`:''}</div>
+    ${c.r==='haoff'?`<div class="mx-n">Die Entität <b>${esc(mxOff(id))}</b> gibt es, sie ist aber deaktiviert. In Home Assistant unter Einstellungen → Geräte &amp; Dienste → Entitäten aktivieren.</div>`:''}
+    ${createdIds.has(mxCreateId(id))?`<div class="mx-chk" style="margin-top:8px"><span>Vom Manager angelegt<small>Diese Entität hat der Manager angelegt. Sie liest den Wert alle 30 s direkt vom EMS-ESP${['number','select','switch'].includes(R(id).split('.')[0])?' und schreibt Änderungen dorthin':''}.</small></span>${MGR&&MGR.is_admin!==false?`<span class="mx-btn mx-ghost" data-mx="uncreate:${esc(mxCreateId(id))}">Entfernen</span>`:''}</div>`:''}
+    ${c.r==='noha' && c.e && MGR && MGR.is_admin!==false && !createdIds.has(mxCreateId(id))?`<div class="mx-chk" style="margin-top:8px"><span>In Home Assistant anlegen<small>Der Manager legt die Entität <b>${esc(mxCreateId(id))}</b> an und liest den Wert direkt vom EMS-ESP${c.e.w&&['number','select','switch'].includes(id.split('.')[0])?' – Änderungen werden zurückgeschrieben':''}.</small></span><span class="mx-btn${MX.busy?' mx-dis':''}" data-mx="create:${esc(id)}">${MX.busy?'Lege an …':'Anlegen'}</span></div>`:''}
+    ${c.r==='noha'?`<div class="mx-n">EMS-ESP hat den Wert, Home Assistant hat aber keine Entität dafür bekommen. Meist ist der Wert im EMS-ESP unter <b>Einstellungen → Anpassungen</b> für MQTT ausgeschlossen, oder die Home-Assistant-Erkennung (MQTT-Discovery) ist für ihn nicht aktiv. Gibt es die Entität unter anderem Namen, hier unten zuordnen.</div>`:''}
     ${MX.wmsg?`<div class="mx-n${/^✓/.test(MX.wmsg)?' mx-good':''}">${esc(MX.wmsg)}</div>`:''}
     ${canW?`<div class="mx-chk" style="margin-top:8px"><span>Schreibtest<small>Schreibt den aktuellen Wert unverändert zurück und prüft, ob EMS-ESP ihn bestätigt.</small></span><span class="mx-btn mx-ghost" data-mx="wt:${esc(id)}">Testen</span></div>`:''}`;
 }
@@ -1307,19 +1345,20 @@ function mxChkBox(all){
   const c={rok:0,rbad:0,wok:0,wbad:0}; all.forEach(id=>{ const x=mxCheck(id); if(!x) return; if(x.r==='ok') c.rok++; if(mxRbad(x)) c.rbad++; if(x.w==='ok') c.wok++; if(mxWbad(x)) c.wbad++; });
   const tile=(k)=>`<div class="mx-st mx-${k}${MX.filter===k?' mx-on':''}" data-mx="f:${k}"><span class="mx-num">${c[k]}</span><span class="mx-lab">${MX_TXT[k]}</span></div>`;
   const t=MX.chkAt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
-  return `<div class="mx-chk"><span>Prüfung vom ${t} Uhr<small>L = Lesen, S = Schreiben · ✓ in Ordnung · ! Problem – Zeile antippen für Details.</small></span><span class="mx-btn mx-ghost${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Erneut prüfen'}</span></div>
-    <div class="mx-stats mx-s2">${tile('rok')}${tile('rbad')}${tile('wok')}${tile('wbad')}</div>`;
+  return `<div class="mx-chk"><span>Geprüft ${MX.chkAt.toDateString()===new Date().toDateString()?'heute':MX.chkAt.toLocaleDateString('de-DE')} um ${t} Uhr<small>L = Lesen, S = Schreiben · ✓ in Ordnung · ! Problem – Zeile antippen für Details.</small></span><span class="mx-btn mx-ghost${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Erneut prüfen'}</span></div>
+    <div class="mx-stats mx-s2">${tile('rok')}${tile('rbad')}${tile('wok')}${tile('wbad')}</div>
+    ${(()=>{ const cr=mxCreatable(all); return cr.length && MGR && MGR.is_admin!==false ? `<div class="mx-chk"><span>Fehlende Werte anlegen<small>${cr.length} Wert${cr.length===1?'':'e'} liefert EMS-ESP, in Home Assistant gibt es aber keine Entität. Der Manager legt sie selbst an und liest sie direkt vom EMS-ESP.</small></span><span class="mx-btn${MX.busy?' mx-dis':''}" data-mx="createall:">${MX.busy?'Lege an …':'Alle anlegen'}</span></div>`:''; })()}`;
 }
 function renderMapX(){
   const box=$('#mapx'); if(!box) return;
   const ae=document.activeElement; if(ae && box.contains(ae) && ae.tagName==='INPUT') return;   // nicht beim Tippen neu aufbauen
   const all=mapIds(), stOf={}; all.forEach(id=>stOf[id]=mapState(id));
   const n={ok:0,na:0,miss:0}; all.forEach(id=>n[stOf[id]]++);
-  if(!MX.filter || !MX_TXT[MX.filter] || (!MX.chk && /^[rw]/.test(MX.filter))) MX.filter = n.miss ? 'miss' : 'all';
+  if(!MX.filter || !MX_TXT[MX.filter] || MX.filter==='na' || (!MX.chk && /^[rw]/.test(MX.filter))) MX.filter = n.miss ? 'miss' : 'all';
   const q=MX.q.trim().toLowerCase();
   const pass=id=>{ const f=MX.filter;
     if(['ok','miss','na'].includes(f) && stOf[id]!==f) return false;
-    if(f!=='na' && emsIds && stOf[id]==='na') return false;   // „Alle“ und Prüf-Filter: nur Funktionen dieser Anlage
+    if(emsIds && stOf[id]==='na') return false;   // nur Funktionen dieser Anlage – nicht gelieferte werden nicht gezeigt
     if(f==='rok'||f==='rbad'||f==='wok'||f==='wbad'){ const c=mxCheck(id); if(!c) return false;
       if(f==='rok' && c.r!=='ok') return false; if(f==='rbad' && !mxRbad(c)) return false;
       if(f==='wok' && c.w!=='ok') return false; if(f==='wbad' && !mxWbad(c)) return false; }
@@ -1338,18 +1377,18 @@ function renderMapX(){
       const pill = /^[rw]/.test(MX.filter) ? `<span class="mx-p${/bad$/.test(MX.filter)?' mx-no':''}">${vis}</span>` : MX.filter==='all' ? (c.miss?`<span class="mx-p mx-no">${c.miss} fehlt</span>`:c.na?`<span class="mx-p mx-nv">${c.na} n. v.</span>`:'<span class="mx-p">OK</span>')
                  : `<span class="mx-p${MX.filter==='miss'?' mx-no':MX.filter==='na'?' mx-nv':''}">${vis}</span>`;
       const rel = emsIds ? c.ok+c.miss : g.ids.length;
-      const sub = [`${c.ok} von ${rel} gefunden`, c.miss?`${c.miss} fehlt in HA`:'', c.na?`${c.na} nicht geliefert`:''].filter(Boolean).join(' · ');
+      const sub = [`${c.ok} von ${rel} gefunden`, c.miss?`${c.miss} fehlt in HA`:''].filter(Boolean).join(' · ');
       rows+=`<div class="mx-r" data-mx="grp:${k}"><span class="mx-k"><span class="mx-l">${esc(g.name)}</span><small>${sub}</small></span><span class="mx-v">${pill}${I.chevR}</span></div>`;
     }
     const custom=Object.keys(diffMap()).length;
     const empty = MX.filter==='miss' ? '✓ Alles zugeordnet – es fehlt keine Entität in Home Assistant.' : 'Keine Einträge.';
-    body = `${mxProfile()}<div class="mx-stats">${tile('all',emsIds?n.ok+n.miss:all.length)}${tile('ok',n.ok)}${tile('miss',n.miss)}${emsIds?tile('na',n.na):''}</div>
+    body = `<div class="mx-stats mx-s3">${tile('all',emsIds?n.ok+n.miss:all.length)}${tile('ok',n.ok)}${tile('miss',n.miss)}</div>
       ${mxChkBox(all)}
       <input class="mx-q" id="mxq" placeholder="Funktion oder Entität suchen …" value="${esc(MX.q)}">
       ${MX.msg?`<div class="mx-n mx-good">${esc(MX.msg)}</div>`:''}
       <div class="mx-sec">${q?'Suchergebnis':'Bereiche'} · ${MX_TXT[MX.filter]}</div>
       ${rows||`<div class="mx-n${MX.filter==='miss'?' mx-good':''}">${empty}</div>`}
-      <div class="mx-n">${emsIds?'<b>Fehlt in HA</b> – EMS-ESP liefert den Wert, aber Home Assistant hat keine passende Entität. Antippen und zuordnen.<br><b>Nicht geliefert</b> – Regler bzw. Wärmepumpe stellen den Wert nicht bereit. Das Panel blendet ihn aus, hier ist nichts zu tun.':'Welche Werte EMS-ESP liefert, konnte nicht abgefragt werden – „fehlt in HA“ kann auch „wird nicht geliefert“ bedeuten.'}</div>
+      <div class="mx-n">${emsIds?'<b>Fehlt in HA</b> – EMS-ESP liefert den Wert, aber Home Assistant hat keine passende Entität. Antippen und zuordnen.<br>Werte, die deine Anlage nicht liefert, werden hier nicht aufgeführt und im Panel ausgeblendet.':'Welche Werte EMS-ESP liefert, konnte nicht abgefragt werden – „fehlt in HA“ kann auch „wird nicht geliefert“ bedeuten.'}</div>
       ${custom&&MGR&&MGR.is_admin!==false?`<div class="mx-r" data-mx="reset:"><span class="mx-k"><span class="mx-l">Eigene Zuordnungen zurücksetzen</span><small>${custom} eigene Zuordnung${custom===1?'':'en'}</small></span><span class="mx-v">⟲</span></div>`:''}`;
   } else if(v.t==='grp'){
     const g=mapBuckets().get(v.g)||{name:'Zuordnung',ids:[]}; title=g.name;
@@ -1386,6 +1425,9 @@ document.addEventListener('click',ev=>{
   if(k==='f'){ MX.filter=v; MX.msg=''; go(); }
   else if(k==='chk'){ mxRunCheck(); }
   else if(k==='allent'){ MX.allEnt=!MX.allEnt; go(); }
+  else if(k==='create'){ mxCreate([v]); }
+  else if(k==='createall'){ mxCreate(mxCreatable(mapIds())); }
+  else if(k==='uncreate'){ mxUncreate(v); }
   else if(k==='wt'){ mxWriteTest(v); }
   else if(k==='grp'){ MX.view.push({t:'grp',g:v}); MX.msg=''; go(); }
   else if(k==='edit'){ MX.wmsg=''; MX.view.push({t:'edit',id:v}); go(); }

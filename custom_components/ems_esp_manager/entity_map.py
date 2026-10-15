@@ -177,6 +177,8 @@ async def ems_entities(api) -> dict[str, dict] | None:
                 item["b"] = info["bool"]
             if isinstance(info.get("index"), int):
                 item["i"] = info["index"]
+            if isinstance(info.get("enum"), list):
+                item["o"] = [str(x) for x in info["enum"]]
             for src, dst in (("min", "min"), ("max", "max"), ("uom", "u")):
                 if src in info:
                     item[dst] = info[src]
@@ -191,11 +193,11 @@ _PROFILE_TYPES = ("boiler", "thermostat", "mixer", "solar", "heatpump", "water",
                   "ventilation", "pool", "extension", "connect", "gateway", "controller", "switch", "alert")
 
 
-async def ems_devices(api) -> list[dict] | None:
+async def ems_devices(api, force: bool = False) -> list[dict] | None:
     """Detected EMS devices [{type, name, brand, productID, deviceID, version}]; None = unknown."""
     import time
 
-    if _PROFILE["devices"] is not None and time.monotonic() - float(_PROFILE["t"]) < 600:
+    if not force and _PROFILE["devices"] is not None and time.monotonic() - float(_PROFILE["t"]) < 600:
         return _PROFILE["devices"]  # type: ignore[return-value]
     try:
         status, data = await api._request("GET", "/api/system/info")  # noqa: SLF001
@@ -213,11 +215,48 @@ async def ems_devices(api) -> list[dict] | None:
     return out
 
 
-def ems_ha_entities(hass: HomeAssistant) -> list[str]:
-    """Entity ids of all (enabled) EMS-ESP entities in Home Assistant."""
+def ems_ha_entities(hass: HomeAssistant, disabled: bool = False) -> list[str]:
+    """Entity ids of all EMS-ESP entities in Home Assistant (enabled, or only the disabled ones)."""
     reg = er.async_get(hass)
     return sorted(
         ent.entity_id
         for ent in reg.entities.values()
-        if ent.platform == "mqtt" and ent.unique_id and not ent.disabled_by and _RE_DEV.search(str(ent.unique_id).lower())
+        if ent.platform == "mqtt" and ent.unique_id and bool(ent.disabled_by) == disabled
+        and _RE_DEV.search(str(ent.unique_id).lower())
     )
+
+
+async def ems_scan(api) -> dict:
+    """Read the plant once: detected devices and all EMS-ESP entities (value, writeable …)."""
+    import time
+
+    return {
+        "t": time.time(),
+        "devices": await ems_devices(api, force=True),
+        "entities": await ems_entities(api),
+    }
+
+
+_TYPE_DE = {"boiler": "Wärmeerzeuger", "thermostat": "Regler", "mixer": "Mischer", "solar": "Solar",
+            "heatpump": "Wärmepumpe", "water": "Warmwasser", "heatsource": "Zuheizer", "ventilation": "Lüftung",
+            "pool": "Pool", "extension": "Erweiterung", "connect": "Connect", "gateway": "Gateway",
+            "controller": "Controller", "switch": "Schaltmodul", "alert": "Alarm"}
+_TYPE_EN = {"boiler": "Heat source", "thermostat": "Controller", "mixer": "Mixer", "heatpump": "Heat pump",
+            "water": "Hot water", "heatsource": "Aux heater", "gateway": "Gateway"}
+
+
+def plant_summary(devices: list[dict] | None, language: str = "de") -> str | None:
+    """Short text for the 'Detected plant' sensor, identical devices counted once (2× Gateway …)."""
+    if not devices:
+        return None
+    labels = _TYPE_DE if language == "de" else _TYPE_EN
+    parts: list[str] = []
+    counts: dict[str, int] = {}
+    for d in devices:
+        name = str(d.get("name") or "").split(",")[0].strip()
+        label = f"{labels.get(str(d.get('type')).lower(), str(d.get('type')).capitalize())} {name}".strip()
+        if label not in counts:
+            parts.append(label)
+        counts[label] = counts.get(label, 0) + 1
+    text = " · ".join(f"{counts[p]}× {p}" if counts[p] > 1 else p for p in parts)
+    return text[:250]

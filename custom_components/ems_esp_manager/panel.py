@@ -409,6 +409,16 @@ async def _ems_ids(hass: HomeAssistant) -> list[str] | None:
     return None
 
 
+def _runtime(hass: HomeAssistant):
+    """Runtime data of the first loaded gateway (or None)."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    for e in hass.config_entries.async_entries(DOMAIN):
+        if e.state is ConfigEntryState.LOADED:
+            return e.runtime_data
+    return None
+
+
 async def _ems_devices(hass: HomeAssistant) -> list[dict] | None:
     """EMS devices detected by EMS-ESP – None if unknown."""
     from homeassistant.config_entries import ConfigEntryState
@@ -436,14 +446,19 @@ async def ws_get(hass: HomeAssistant, connection, msg) -> None:
     """Mapping and heating-circuit names (every logged-in user)."""
     if (mgr := _mgr_or_error(hass, connection, msg)) is None:
         return
+    rt = _runtime(hass)
+    scan = rt.extra.get("scan") if rt else None
     connection.send_result(
         msg["id"],
         {
             "map": mgr.data["map"],
             "auto": build_auto_map(hass),
             "ems_ids": await _ems_ids(hass),
-            "devices": await _ems_devices(hass),
+            "devices": (scan or {}).get("devices") or await _ems_devices(hass),
+            "check": {"entities": scan.get("entities"), "t": scan.get("t")} if scan and scan.get("entities") else None,
             "ha_ems": ems_ha_entities(hass),
+            "ha_ems_off": ems_ha_entities(hass, disabled=True),
+            "created": sorted((mgr.data.get("created") or {}).keys()),
             "hc_names": mgr.data["hc_names"],
             "is_admin": connection.user.is_admin,
         },
@@ -458,6 +473,7 @@ async def ws_check(hass: HomeAssistant, connection, msg) -> None:
     from homeassistant.config_entries import ConfigEntryState
 
     result = None
+    t = None
     for e in hass.config_entries.async_entries(DOMAIN):
         if e.state is ConfigEntryState.LOADED:
             try:
@@ -465,8 +481,75 @@ async def ws_check(hass: HomeAssistant, connection, msg) -> None:
             except Exception:  # noqa: BLE001
                 _LOGGER.debug("EMS-ESP entities not readable", exc_info=True)
             if result is not None:
+                import time
+
+                t = time.time()
+                scan = dict(e.runtime_data.extra.get("scan") or {})
+                scan.update(entities=result, t=t)
+                e.runtime_data.extra["scan"] = scan
                 break
-    connection.send_result(msg["id"], {"entities": result})
+    connection.send_result(msg["id"], {"entities": result, "t": t})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/panel/create",
+        vol.Required("ids"): [str],
+        vol.Optional("labels", default={}): {str: str},
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+@_report_errors
+async def ws_create(hass: HomeAssistant, connection, msg) -> None:
+    """Create manager entities for EMS-ESP values that have no entity in Home Assistant."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    from .extra_values import async_create
+
+    entry = next((e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED), None)
+    if entry is None:
+        connection.send_error(msg["id"], "not_loaded", "EMS-ESP Manager nicht geladen")
+        return
+    scan = entry.runtime_data.extra.get("scan") or {}
+    ents = scan.get("entities") or {}
+    if not ents:
+        try:
+            ents = await ems_entities(entry.runtime_data.api) or {}
+        except Exception:  # noqa: BLE001
+            ents = {}
+    done: dict[str, str] = {}
+    errors: dict[str, str] = {}
+    for std_id in msg["ids"]:
+        obj = std_id.split(".", 1)[-1]
+        info = ents.get(obj)
+        if info is None:
+            errors[std_id] = "EMS-ESP liefert diesen Wert nicht"
+            continue
+        try:
+            done[std_id] = await async_create(hass, entry, std_id, msg["labels"].get(std_id, ""), info)
+        except Exception as err:  # noqa: BLE001
+            errors[std_id] = str(err)
+    connection.send_result(msg["id"], {"created": done, "errors": errors})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/panel/uncreate", vol.Required("id"): str}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+@_report_errors
+async def ws_uncreate(hass: HomeAssistant, connection, msg) -> None:
+    """Remove an entity the manager created."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    from .extra_values import async_remove
+
+    for e in hass.config_entries.async_entries(DOMAIN):
+        if e.state is ConfigEntryState.LOADED:
+            await async_remove(hass, e, msg["id"])
+            break
+    connection.send_result(msg["id"], {"ok": True})
 
 
 @websocket_api.websocket_command(
@@ -599,7 +682,7 @@ async def async_setup_panel(hass: HomeAssistant, options: dict[str, Any]) -> Pan
         if not hass.data.get(f"{_DATA}_http"):
             hass.http.register_view(PanelView())
             hass.http.register_view(PanelAdminView())
-            for cmd in (ws_get, ws_check, ws_save, ws_info, ws_upload, ws_restore, ws_reset):
+            for cmd in (ws_get, ws_check, ws_create, ws_uncreate, ws_save, ws_info, ws_upload, ws_restore, ws_reset):
                 websocket_api.async_register_command(hass, cmd)
             hass.data[f"{_DATA}_http"] = True
     mgr.options = dict(options)
