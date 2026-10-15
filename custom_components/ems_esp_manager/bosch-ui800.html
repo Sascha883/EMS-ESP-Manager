@@ -316,7 +316,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.10.30";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.10.31";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -340,6 +340,8 @@ let settings = Object.assign({ advanced:false, brightness:100, saver:0, lock:fal
 function saveSettings(){ LS.set('settings',settings); applyDisplay(); }
 let userMap = Object.assign({}, ENTITY_OVERRIDES, LS.get('map',{}));
 let emsIds = null;               // vom Manager: Werte, die EMS-ESP überhaupt liefert (Kurznamen), null = unbekannt
+let emsDevices = null;           // vom Manager: erkannte EMS-Geräte (Anlagenprofil)
+let haEms = null;                // vom Manager: alle EMS-ESP-Entitäten in HA
 let autoMap = {};                // vom Manager: Standard-ID → echte ID (andere Entity-ID-Formate, englische Langnamen …)
 // Zuordnung / Heizkreisnamen: mit Manager in Home Assistant, sonst im Browser
 function mgrSave(data){
@@ -359,6 +361,8 @@ async function loadMgr(){
     userMap = Object.assign({}, ENTITY_OVERRIDES, r.map||{});
     autoMap = r.auto || {};
     emsIds = Array.isArray(r.ems_ids) ? new Set(r.ems_ids) : null;
+    emsDevices = Array.isArray(r.devices) ? r.devices : null;
+    haEms = Array.isArray(r.ha_ems) && r.ha_ems.length ? new Set(r.ha_ems) : null;
     LS.set('map', r.map||{});
     settings.hcNames = Object.assign({}, r.hc_names||{}); LS.set('settings',settings);
     MGR.is_admin = !!r.is_admin;
@@ -1204,7 +1208,12 @@ const MX_TXT = { all:'Alle', ok:'Gefunden', miss:'Fehlt in HA', na:'Nicht gelief
 const MX_R = { ok:'wird gelesen', diff:'HA-Wert weicht von EMS-ESP ab', empty:'EMS-ESP kennt den Wert, hat aber noch keinen Inhalt', noha:'EMS-ESP liefert, in HA fehlt die Entität', na:'wird von der Anlage nicht geliefert', hidden:'in EMS-ESP für API/MQTT ausgeblendet', nocheck:'nicht über EMS-ESP prüfbar' };
 const MX_W = { ok:'beschreibbar', ha_ro:'EMS-ESP erlaubt Schreiben, die HA-Entität ist aber nur lesend', ems_ro:'in EMS-ESP schreibgeschützt (nur lesen)', show:'nur Anzeige – wird nicht geschrieben', nocheck:'nicht über EMS-ESP prüfbar' };
 const MX_WDOM = ['number','select','switch','text','input_number','input_boolean','input_select'];
-function mxEms(id){ if(!MX.chk) return null; const obj=(id.split('.')[1]||''); if(MX.chk[obj]) return MX.chk[obj];
+function isUI800(){ if(emsIds && (emsIds.has('thermostat_hpoperatingmode')||emsIds.has('thermostat_summertemp'))) return true;
+  return !!(emsDevices && emsDevices.some(d=>/UI ?800|BC ?400|HMI ?800/i.test(String(d.name||'')))); }
+function mxEms(id){ if(!MX.chk) return null; const obj=(id.split('.')[1]||'');
+  const g=/^thermostat_hc\d+_(\w+)$/.exec(obj);
+  if(g && UI800_GLOBAL.includes(g[1]) && !userMap[id] && MX.chk['thermostat_'+g[1]] && (isUI800() || R(id)===R1(id.split('.')[0]+'.thermostat_'+g[1]))) return MX.chk['thermostat_'+g[1]];
+  if(MX.chk[obj]) return MX.chk[obj];
   const m=/^thermostat_hc\d+_(\w+)$/.exec(obj); if(m && UI800_GLOBAL.includes(m[1]) && MX.chk['thermostat_'+m[1]]) return MX.chk['thermostat_'+m[1]]; return null; }
 // EMS-ESP-Wert ↔ HA-Zustand sprachunabhängig vergleichen (EMS-ESP übersetzt z. B. „aus“, HA-Schalter melden „off“)
 function mxEq(e, hs){
@@ -1241,7 +1250,19 @@ async function mxRunCheck(){
     else { MX.chk=r.entities; MX.chkAt=new Date(); MX.msg=''; }
   }catch(e){ MX.msg='Prüfung fehlgeschlagen: '+((e&&e.message)||e)+' (Manager aktualisieren und HA neu starten?)'; }
   MX.busy=false; MX.html=''; renderMapX(); }
+function mxWriteBlock(id){
+  const c=mxCheck(id); if(!c || c.w!=='ok') return 'Nicht beschreibbar.';
+  const e=c.e||{}, v=parseFloat(st(id)), d=R(id).split('.')[0];
+  if(d==='number'||d==='input_number'){
+    if(isNaN(v)) return 'Kein gültiger Zahlenwert in Home Assistant.';
+    if((typeof e.min==='number' && v<e.min) || (typeof e.max==='number' && v>e.max)) return `Der aktuelle Wert ${st(id)} liegt außerhalb des erlaubten Bereichs ${e.min} … ${e.max} – diese Entität wird von der Anlage nicht benutzt. Kein Schreibtest.`;
+    const a=at(id,'min'), b=at(id,'max'); if((typeof a==='number'&&v<a)||(typeof b==='number'&&v>b)) return `Der aktuelle Wert ${st(id)} liegt außerhalb des Bereichs der HA-Entität (${a} … ${b}). Kein Schreibtest.`;
+  }
+  if(!('v' in e)) return 'EMS-ESP hat für diesen Wert keinen Inhalt – kein Schreibtest.';
+  return '';
+}
 async function mxWriteTest(id){
+  const blk=mxWriteBlock(id); if(blk){ MX.wmsg='✗ '+blk; MX.html=''; renderMapX(); return; }
   const r=R(id), d=r.split('.')[0], s0=st(id); MX.wmsg='Schreibtest läuft …'; MX.html=''; renderMapX();
   try{
     if(d==='number'||d==='input_number') await callService(d,'set_value',{entity_id:r,value:s0});
@@ -1264,7 +1285,7 @@ function mxEditCheck(id){
   const c=mxCheck(id);
   if(!c) return `<div class="mx-lb">Prüfung</div><div class="mx-chk" style="margin-top:4px"><span>Lesen &amp; Schreiben prüfen<small>Es wird nichts verändert.</small></span><span class="mx-btn${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Prüfen'}</span></div>`;
   const e=c.e||{}, mm=('min' in e||'max' in e)?`${e.min??'–'} … ${e.max??'–'}${e.u?' '+e.u:''}`:'';
-  const canW = c.w==='ok' && MGR && MGR.is_admin!==false;
+  const canW = c.w==='ok' && MGR && MGR.is_admin!==false && !mxWriteBlock(id);
   return `<div class="mx-lb">Prüfung</div><div class="mx-tbl">
     <div><span>Lesen</span><span>${mxRbad(c)?'! ':c.r==='ok'?'✓ ':''}${esc(MX_R[c.r]||'')}</span></div>
     <div><span>Schreiben</span><span>${mxWbad(c)?'! ':c.w==='ok'?'✓ ':''}${esc(MX_W[c.w]||MX_R[c.w]||'')}</span></div>
@@ -1273,6 +1294,12 @@ function mxEditCheck(id){
     ${mm?`<div><span>Bereich</span><span>${esc(mm)}</span></div>`:''}</div>
     ${MX.wmsg?`<div class="mx-n${/^✓/.test(MX.wmsg)?' mx-good':''}">${esc(MX.wmsg)}</div>`:''}
     ${canW?`<div class="mx-chk" style="margin-top:8px"><span>Schreibtest<small>Schreibt den aktuellen Wert unverändert zurück und prüft, ob EMS-ESP ihn bestätigt.</small></span><span class="mx-btn mx-ghost" data-mx="wt:${esc(id)}">Testen</span></div>`:''}`;
+}
+const MX_DEVT = { boiler:'Wärmeerzeuger', thermostat:'Regler', mixer:'Mischer', solar:'Solar', heatpump:'Wärmepumpe', water:'Warmwasser', heatsource:'Zuheizer', ventilation:'Lüftung', pool:'Pool', extension:'Erweiterung', connect:'Connect', gateway:'Gateway', controller:'Controller', switch:'Schaltmodul', alert:'Alarm' };
+function mxProfile(){
+  if(!emsDevices || !emsDevices.length) return '';
+  const list=emsDevices.map(d=>`${MX_DEVT[String(d.type).toLowerCase()]||d.type} ${esc(String(d.name||''))}`).join(' · ');
+  return `<div class="mx-r mx-ro" style="cursor:default"><span class="mx-k"><span class="mx-l">Erkannte Anlage${isUI800()?' <span class="mx-p mx-nv">UI800-Profil</span>':''}</span><small style="white-space:normal">${list}</small></span></div>`;
 }
 function mxChkBox(all){
   if(!conn.msg) return '';
@@ -1292,6 +1319,7 @@ function renderMapX(){
   const q=MX.q.trim().toLowerCase();
   const pass=id=>{ const f=MX.filter;
     if(['ok','miss','na'].includes(f) && stOf[id]!==f) return false;
+    if(f!=='na' && emsIds && stOf[id]==='na') return false;   // „Alle“ und Prüf-Filter: nur Funktionen dieser Anlage
     if(f==='rok'||f==='rbad'||f==='wok'||f==='wbad'){ const c=mxCheck(id); if(!c) return false;
       if(f==='rok' && c.r!=='ok') return false; if(f==='rbad' && !mxRbad(c)) return false;
       if(f==='wok' && c.w!=='ok') return false; if(f==='wbad' && !mxWbad(c)) return false; }
@@ -1309,12 +1337,13 @@ function renderMapX(){
       const c={ok:0,na:0,miss:0}; g.ids.forEach(id=>c[stOf[id]]++);
       const pill = /^[rw]/.test(MX.filter) ? `<span class="mx-p${/bad$/.test(MX.filter)?' mx-no':''}">${vis}</span>` : MX.filter==='all' ? (c.miss?`<span class="mx-p mx-no">${c.miss} fehlt</span>`:c.na?`<span class="mx-p mx-nv">${c.na} n. v.</span>`:'<span class="mx-p">OK</span>')
                  : `<span class="mx-p${MX.filter==='miss'?' mx-no':MX.filter==='na'?' mx-nv':''}">${vis}</span>`;
-      const sub = [`${c.ok} von ${g.ids.length} gefunden`, c.miss?`${c.miss} fehlt in HA`:'', c.na?`${c.na} nicht geliefert`:''].filter(Boolean).join(' · ');
+      const rel = emsIds ? c.ok+c.miss : g.ids.length;
+      const sub = [`${c.ok} von ${rel} gefunden`, c.miss?`${c.miss} fehlt in HA`:'', c.na?`${c.na} nicht geliefert`:''].filter(Boolean).join(' · ');
       rows+=`<div class="mx-r" data-mx="grp:${k}"><span class="mx-k"><span class="mx-l">${esc(g.name)}</span><small>${sub}</small></span><span class="mx-v">${pill}${I.chevR}</span></div>`;
     }
     const custom=Object.keys(diffMap()).length;
     const empty = MX.filter==='miss' ? '✓ Alles zugeordnet – es fehlt keine Entität in Home Assistant.' : 'Keine Einträge.';
-    body = `<div class="mx-stats">${tile('all',all.length)}${tile('ok',n.ok)}${tile('miss',n.miss)}${emsIds?tile('na',n.na):''}</div>
+    body = `${mxProfile()}<div class="mx-stats">${tile('all',emsIds?n.ok+n.miss:all.length)}${tile('ok',n.ok)}${tile('miss',n.miss)}${emsIds?tile('na',n.na):''}</div>
       ${mxChkBox(all)}
       <input class="mx-q" id="mxq" placeholder="Funktion oder Entität suchen …" value="${esc(MX.q)}">
       ${MX.msg?`<div class="mx-n mx-good">${esc(MX.msg)}</div>`:''}
@@ -1328,16 +1357,18 @@ function renderMapX(){
     body = `${conn.msg&&!MX.chk?`<div class="mx-chk" style="margin-top:10px"><span>Lesen &amp; Schreiben prüfen<small>Es wird nichts verändert.</small></span><span class="mx-btn${MX.busy?' mx-dis':''}" data-mx="chk:">${MX.busy?'Prüfe …':'Prüfen'}</span></div>`:''}<div class="mx-sec">${MX_TXT[MX.filter]} · ${ids.length}</div>${ids.map(row).join('')||'<div class="mx-n">Keine Einträge.</div>'}`;
   } else if(v.t==='edit'){
     const id=v.id, dom=id.split('.')[0], r=R(id); title='Zuordnung';
-    const cands=Object.keys(S).filter(e=>e.startsWith(dom+'.')||(dom==='sensor'&&e.startsWith('text.'))).sort();
+    const okDom={number:['number','input_number'],select:['select','input_select'],switch:['switch','input_boolean'],sensor:['sensor','text','binary_sensor'],binary_sensor:['binary_sensor','sensor'],text:['text','sensor']}[dom]||[dom];
+    const cands=Object.keys(S).filter(e=>okDom.includes(e.split('.')[0]) && (MX.allEnt || !haEms || haEms.has(e))).sort();
     const key=(id.split('.')[1]||'').replace(/^(boiler|thermostat)_/,'').split('_').pop();
     const sugg=cands.filter(e=>e.includes(key)).slice(0,8);
     body = `<div class="mx-ed">
       <div class="mx-lb">Funktion</div><div class="mx-vl">${esc(mapLabel(id))} ${mxPill(stOf[id]||mapState(id))}</div>
-      <div class="mx-lb">Standard (EMS-ESP)</div><div class="mx-vl mx-mono">${esc(id)}</div>
+      <div class="mx-lb">Standard (EMS-ESP)</div><div class="mx-vl mx-mono">${esc(id)}</div>${(()=>{ const g=/^(\w+)\.thermostat_hc\d+_(\w+)$/.exec(id); return g&&UI800_GLOBAL.includes(g[2])&&isUI800()?`<div class="mx-n" style="padding:4px 0">Beim UI800/BC400 gilt der anlagenweite Wert <b>${esc(g[1]+'.thermostat_'+g[2])}</b> – der Wert je Heizkreis wird vom Regler nicht benutzt.</div>`:''; })()}
       ${r!==id?`<div class="mx-lb">Aktuell verwendet</div><div class="mx-vl mx-mono">${esc(r)} · ${userMap[id]?'manuell':'automatisch'}</div>`:''}
       ${mxEditCheck(id)}
       <div class="mx-lb">Deine Entität</div>
-      <input class="mx-in" id="mxin" list="mxdl" value="${esc(userMap[id]||r)}"><datalist id="mxdl">${cands.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+      <input class="mx-in" id="mxin" list="mxdl" value="${esc(userMap[id]||r)}">
+      ${haEms?`<div class="mx-n" style="padding:6px 0;cursor:pointer" data-mx="allent:"><span style="display:inline-block;width:14px;height:14px;border:1px solid #666;border-radius:3px;vertical-align:-2px;margin-right:6px;text-align:center;line-height:13px;font-size:11px;color:#fff;background:${MX.allEnt?'var(--acc)':'none'}">${MX.allEnt?'✓':''}</span>Alle Entitäten zeigen <span style="color:#666">(sonst nur EMS-ESP-Entitäten · ${cands.length} passend)</span></div>`:''}<datalist id="mxdl">${cands.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
       ${sugg.length?`<div class="mx-lb">Vorschläge</div>${sugg.map(x=>`<div class="mx-sg" data-mx="pick:${esc(x)}"><span>${esc(x)}</span><span>${esc((S[x]||{}).state)}</span></div>`).join('')}`:''}
       ${MGR&&MGR.is_admin===false?'<div class="mx-n">Ändern nur als Administrator.</div>':`<div class="mx-bt"><div data-mx="std:${esc(id)}">Standard</div><div data-mx="back:">Abbrechen</div><div class="mx-pri" data-mx="save:${esc(id)}">Speichern</div></div>`}
     </div>`;
@@ -1354,6 +1385,7 @@ document.addEventListener('click',ev=>{
   const go=()=>{ MX.html=''; renderMapX(); $('#mapx').scrollTop=0; };
   if(k==='f'){ MX.filter=v; MX.msg=''; go(); }
   else if(k==='chk'){ mxRunCheck(); }
+  else if(k==='allent'){ MX.allEnt=!MX.allEnt; go(); }
   else if(k==='wt'){ mxWriteTest(v); }
   else if(k==='grp'){ MX.view.push({t:'grp',g:v}); MX.msg=''; go(); }
   else if(k==='edit'){ MX.wmsg=''; MX.view.push({t:'edit',id:v}); go(); }

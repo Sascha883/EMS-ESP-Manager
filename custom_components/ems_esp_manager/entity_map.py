@@ -182,3 +182,42 @@ async def ems_entities(api) -> dict[str, dict] | None:
                     item[dst] = info[src]
             out[f"{dev}_{str(key).replace('.', '_')}"] = item
     return out if ok else None
+
+
+# ---------------------------------------------------------------------------
+# Plant profile: which EMS devices did EMS-ESP detect?  (GET /api/system/info)
+_PROFILE: dict[str, object] = {"t": 0.0, "devices": None}
+_PROFILE_TYPES = ("boiler", "thermostat", "mixer", "solar", "heatpump", "water", "heatsource",
+                  "ventilation", "pool", "extension", "connect", "gateway", "controller", "switch", "alert")
+
+
+async def ems_devices(api) -> list[dict] | None:
+    """Detected EMS devices [{type, name, brand, productID, deviceID, version}]; None = unknown."""
+    import time
+
+    if _PROFILE["devices"] is not None and time.monotonic() - float(_PROFILE["t"]) < 600:
+        return _PROFILE["devices"]  # type: ignore[return-value]
+    try:
+        status, data = await api._request("GET", "/api/system/info")  # noqa: SLF001
+    except Exception:  # noqa: BLE001
+        return None
+    if status != 200 or not isinstance(data, dict):
+        return None
+    devs = data.get("devices") or data.get("Devices") or []
+    out = [
+        {k: d.get(k) for k in ("type", "name", "brand", "productID", "deviceID", "version")}
+        for d in devs
+        if isinstance(d, dict) and str(d.get("type", "")).lower() in _PROFILE_TYPES
+    ]
+    _PROFILE.update(t=time.monotonic(), devices=out)
+    return out
+
+
+def ems_ha_entities(hass: HomeAssistant) -> list[str]:
+    """Entity ids of all (enabled) EMS-ESP entities in Home Assistant."""
+    reg = er.async_get(hass)
+    return sorted(
+        ent.entity_id
+        for ent in reg.entities.values()
+        if ent.platform == "mqtt" and ent.unique_id and not ent.disabled_by and _RE_DEV.search(str(ent.unique_id).lower())
+    )
