@@ -117,6 +117,9 @@
       },
       "bus_log": {
         "name": "Bus-Log"
+      },
+      "plant": {
+        "name": "Erkannte Anlage"
       }
     }
   },

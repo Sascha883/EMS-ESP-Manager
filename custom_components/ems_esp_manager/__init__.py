@@ -32,8 +32,10 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.NUMBER,
     Platform.SELECT,
     Platform.SENSOR,
+    Platform.SWITCH,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -135,6 +137,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: EmsEspConfigEntry) -> bo
     except EmsEspError:
         pass
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # read the plant once when Home Assistant starts (detected devices, all values with
+    # read/write flags) – used by the "Detected plant" sensor and the mapping tab
+    async def _scan(_now=None) -> None:
+        from .entity_map import ems_scan
+
+        try:
+            result = await ems_scan(api)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("EMS-ESP plant scan failed", exc_info=True)
+            return
+        if result.get("devices") is not None or result.get("entities") is not None:
+            runtime.extra["scan"] = result
+            status.async_update_listeners()
+
+    runtime.extra["scan_fn"] = _scan
+    entry.async_create_background_task(hass, _scan(), "ems_esp_manager_scan")
 
     await async_register_dashboard(
         hass,

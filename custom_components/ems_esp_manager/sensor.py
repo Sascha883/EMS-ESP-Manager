@@ -34,6 +34,7 @@ from .const import (
     STATUS_RESTART_REQUESTED,
     STATUS_UPLOADING,
 )
+from .entity_map import plant_summary
 from .coordinator import EmsEspConfigEntry, EmsEspRuntime
 from .entity import EmsEspEntity
 from .names import STATES
@@ -148,6 +149,17 @@ SENSORS: tuple[EmsEspSensorDescription, ...] = (
         value_fn=lambda rt: rt.status.data.get("num_devices"),
     ),
     EmsEspSensorDescription(
+        key="plant",
+        icon="mdi:heat-pump-outline",
+        value_fn=lambda rt: plant_summary((rt.extra.get("scan") or {}).get("devices"), rt.language),
+        attr_fn=lambda rt: {
+            "devices": [
+                {k: d.get(k) for k in ("type", "name", "brand", "deviceID", "productID", "version")}
+                for d in ((rt.extra.get("scan") or {}).get("devices") or [])
+            ],
+        },
+    ),
+    EmsEspSensorDescription(
         key="wifi_rssi",
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
@@ -181,6 +193,9 @@ async def async_setup_entry(
     entry: EmsEspConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    from .extra_values import async_setup_platform_extra
+
+    await async_setup_platform_extra(hass, entry, "sensor", async_add_entities)
     async_add_entities(EmsEspSensor(entry, d) for d in SENSORS)
 
 

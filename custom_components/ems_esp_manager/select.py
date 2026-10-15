@@ -19,6 +19,9 @@ async def async_setup_entry(
     entry: EmsEspConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    from .extra_values import async_setup_platform_extra
+
+    await async_setup_platform_extra(hass, entry, "select", async_add_entities)
     async_add_entities(
         [
             EmsEspVersionSelect(entry),

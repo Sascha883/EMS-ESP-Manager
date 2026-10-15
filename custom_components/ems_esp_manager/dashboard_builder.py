@@ -28,6 +28,8 @@ TXT = {
         "mqtt": "MQTT",
         "firmware": "Firmware",
         "system": "System",
+        "plant": "Erkannte Anlage",
+        "plant_wait": "Die Anlage wird beim Start einmal ausgelesen …",
         "heating": "Heizung & Warmwasser",
         "install": "Firmware installieren",
         "install_confirm": "EMS-ESP lädt die neue Firmware von GitHub, installiert sie und startet neu "
@@ -73,6 +75,8 @@ TXT = {
         "mqtt": "MQTT",
         "firmware": "Firmware",
         "system": "System",
+        "plant": "Detected plant",
+        "plant_wait": "The plant is read once at start …",
         "heating": "Heating & hot water",
         "install": "Install firmware",
         "install_confirm": "EMS-ESP will download the new firmware from GitHub, flash it and restart "
@@ -358,6 +362,30 @@ def build_dashboard(hass: HomeAssistant) -> dict[str, Any]:
                 "entities": [{"entity": i, "name": own_name(i)} for i in rows],
             },
         ]
+        if "plant" in own_by_key:
+            pid = own_by_key["plant"]
+            types = (
+                "{'boiler':'Wärmeerzeuger','thermostat':'Regler','mixer':'Mischer','solar':'Solar',"
+                "'heatpump':'Wärmepumpe','water':'Warmwasser','heatsource':'Zuheizer','gateway':'Gateway',"
+                "'connect':'Connect','controller':'Controller','extension':'Erweiterung','ventilation':'Lüftung'}"
+                if t["plant"].startswith("Erkannte") else
+                "{'boiler':'Heat source','thermostat':'Controller','mixer':'Mixer','heatpump':'Heat pump',"
+                "'water':'Hot water','heatsource':'Aux heater','gateway':'Gateway'}"
+            )
+            sys_cards.append(
+                {
+                    "type": "markdown",
+                    "title": t["plant"],
+                    "content": (
+                        "{% set ns = namespace(n=0) %}{% set ty = " + types + " %}"
+                        "{% for d in state_attr('" + pid + "', 'devices') or [] %}{% set ns.n = ns.n + 1 %}"
+                        "**{{ ty.get(d.type, d.type) }}** – {{ d.name }}"
+                        "{% if d.deviceID %} · 0x{{ d.deviceID }}{% endif %}"
+                        "{% if d.version %} · V {{ d.version }}{% endif %}\n\n"
+                        "{% endfor %}{% if ns.n == 0 %}" + t["plant_wait"] + "{% endif %}"
+                    ),
+                }
+            )
         for card in (
             tile_button("fetch_values", "mdi:database-refresh"),
             tile_button("restart", "mdi:restart", t["restart_confirm"]),

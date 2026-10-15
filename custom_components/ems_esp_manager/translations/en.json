@@ -117,6 +117,9 @@
       },
       "bus_log": {
         "name": "Bus log"
+      },
+      "plant": {
+        "name": "Detected plant"
       }
     }
   },
