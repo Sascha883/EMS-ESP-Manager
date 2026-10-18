@@ -317,7 +317,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.11.14";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.11.18";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -764,16 +764,18 @@ const MENUS = {
   /* ---------- Warmwasser → Mehr… ---------- */
   dhw: { title:'Warmwasser', items:[
     FN('Erweiterte Ansicht', ()=>{settings.advanced=!settings.advanced; saveSettings(); render();}, {tog:()=>settings.advanced}),
-    NAV('Thermische Desinfektion','disinf',{val:()=>has('switch.thermostat_dhw_disinfecting')&&on('switch.thermostat_dhw_disinfecting')?'Läuft':''}),
-    NAV('WW-Zirkulationspumpe','circ',{val:()=>has('select.thermostat_dhw_circmode')?selLabel('select.thermostat_dhw_circmode','dhw.circmode'):''}),
     FN('Programmzeiten', ()=>openSched('dhw'), {val:()=>schedSummary('dhw')}),
-    NAV('Tägliche Aufheizung','daily',{val:()=>has('switch.thermostat_dhw_dailyheating')?(on('switch.thermostat_dhw_dailyheating')?'Ein':'Aus'):''}),
-    RO(B('dhw_settemp'),'Solltemperatur',{adv:true}),
     NAV('Verlauf Warmwassertemperatur','dhwhist'),
+    NAV('Thermische Desinfektion','disinf',{adv:true, val:()=>has('switch.thermostat_dhw_disinfecting')&&on('switch.thermostat_dhw_disinfecting')?'Läuft':''}),
+    NAV('WW-Zirkulationspumpe','circ',{val:()=>has('select.thermostat_dhw_circmode')?selLabel('select.thermostat_dhw_circmode','dhw.circmode'):''}),
+    NAV('Tägliche Aufheizung','daily',{val:()=>has('switch.thermostat_dhw_dailyheating')?(on('switch.thermostat_dhw_dailyheating')?'Ein':'Aus'):''}),
     RO(B('dhw_curtemp2'),'Temperatur extern',{dec:1,adv:true}),
     N('number.thermostat_dhw_settemp','Wunschtemperatur Komfort',{adv:true}),
     N('number.thermostat_dhw_settemplow','Wunschtemperatur Eco',{adv:true}),
+    SEC('Info'),
     RO('binary_sensor.boiler_dhw_charging','Ladung aktiv',{bin:true}),
+    RO(B('dhw_settemp'),'Solltemperatur'),
+    RO(B('dhw_curtemp'),'Isttemperatur',{dec:1}),
   ]},
   disinf: { title:'Thermische Desinfektion', items:[
     SW('switch.thermostat_dhw_disinfecting','Start / Stopp'),
@@ -1988,7 +1990,7 @@ function vDhwHist(t){
   const mid=new Date(); mid.setHours(0,0,0,0); const startT=mid.getTime(), endT=startT+864e5, nowT=Date.now();
   if(!t.loading && !t.data){ t.loading=true; const hrs=(nowT-startT)/36e5+0.5;
     Promise.all([fetchHistory(istId,hrs), has(solId)?fetchHistory(solId,hrs):Promise.resolve([])]).then(([a,b])=>{ t.data={ist:a,sol:b}; t.loading=false; if(top_()===t) render(); }); }
-  const W=PORTRAIT?386:668, H=PORTRAIT?300:230, x0=44, x1=W-14, yT=14, yB=H-34;
+  const W=PORTRAIT?386:668, H=PORTRAIT?400:330, x0=44, x1=W-14, yT=44, yB=H-34;
   const clip = arr => { const d=(arr||[]).filter(p=>p.t<=nowT).sort((p,q)=>p.t-q.t); const before=d.filter(p=>p.t<startT).pop(); const r=d.filter(p=>p.t>=startT); if(before) r.unshift({t:startT,v:before.v}); return r; };
   const ist=clip(t.data&&t.data.ist), sol=clip(t.data&&t.data.sol);
   const curI=nv(istId), curS=nv(solId);
@@ -2000,7 +2002,6 @@ function vDhwHist(t){
   const step = arr => arr.length ? arr.map((p,i)=>i?`H${X(p.t).toFixed(1)} V${Y(p.v).toFixed(1)}`:`M${X(p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join(' ') : '';
   const grid=[]; for(let h=0;h<=24;h+=3){ const xx=X(startT+h*36e5); grid.push(`<line x1="${xx}" x2="${xx}" y1="${yT}" y2="${yB}" stroke="#222"/><text x="${xx}" y="${yB+20}" fill="#777" font-size="13" text-anchor="middle">${h}</text>`); }
   for(let v=lo; v<=hi; v+=5){ grid.push(`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="#222"/><text x="${x0-6}" y="${Y(v)+4}" fill="#888" font-size="12" text-anchor="end">${v}°</text>`); }
-  const iv=ist.map(p=>p.v); const mn=iv.length?Math.min(...iv):null, mx=iv.length?Math.max(...iv):null;
   const empty = !ist.length && !sol.length;
   return header('Verlauf Warmwasser',{icon:ico(I.tap,26)})+`<div class="chart"><svg width="${W}" height="${H}">
      ${grid.join('')}
@@ -2008,11 +2009,11 @@ function vDhwHist(t){
      ${empty?`<text x="${W/2}" y="${H/2}" fill="#777" font-size="16" text-anchor="middle">${t.loading?'Lade Verlauf …':'Kein Verlauf verfügbar'}</text>`:''}
      ${sol.length?`<path d="${step(sol)}" fill="none" stroke="#4fb3f6" stroke-width="2" stroke-dasharray="6 4"/>`:''}
      ${ist.length?`<path d="${line(ist)}" fill="none" stroke="#f29c32" stroke-width="2.5"/>`:''}
-     <text x="${x1}" y="${yT+12}" fill="#f29c32" font-size="13" text-anchor="end">— Ist</text>
-     <text x="${x1-52}" y="${yT+12}" fill="#4fb3f6" font-size="13" text-anchor="end">- - Soll</text>
-   </svg></div>
-   <div class="bline"></div>
-   <div class="bar" style="font-size:${PORTRAIT?16:19}px"><span class="info">Min: ${mn==null?'–':fmtN(mn,0)+'°'}</span><span class="info">Max: ${mx==null?'–':fmtN(mx,0)+'°'}</span><span class="info">Ist: ${curI==null?'–':fmtN(curI,1)+'°'}</span><span class="info">Soll: ${curS==null?'–':fmtN(curS,0)+'°'}</span></div>`;
+     ${(()=>{ const lx=x0, ly=24;   // oben: Soll/Ist mit Temperatur und Linienmuster
+        return `<line x1="${lx}" x2="${lx+28}" y1="${ly-6}" y2="${ly-6}" stroke="#4fb3f6" stroke-width="2.5" stroke-dasharray="6 4"/><text x="${lx+36}" y="${ly}" fill="#4fb3f6" font-size="18">Soll: ${curS!=null?fmtN(curS,0)+'°':'–'}</text>
+          <line x1="${lx+160}" x2="${lx+188}" y1="${ly-6}" y2="${ly-6}" stroke="#f29c32" stroke-width="3"/><text x="${lx+196}" y="${ly}" fill="#f29c32" font-size="18">Ist: ${curI!=null?fmtN(curI,1)+'°':'–'}</text>`; })()}
+     ${ist.length?`<circle cx="${X(nowT)}" cy="${Y(ist[ist.length-1].v)}" r="4" fill="#000" stroke="#f29c32" stroke-width="2"/>`:''}
+   </svg></div>`;
 }
 /* ---------- Energie ---------- */
 /* „Heute“ = Zählerstand jetzt − Zählerstand um 0:00 (aus dem HA-Verlauf) */

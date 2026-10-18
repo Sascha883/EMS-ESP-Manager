@@ -13,7 +13,7 @@
   * The optimisation starts once a day inside the time window (default 11:00–15:00) if forecast and surplus are OK and the tank is not yet hot. It then sets hot-water mode **Comfort** and the comfort stop temperature to the target temperature.
   * It ends when the target temperature is reached, the time window is over or the function is switched off. Mode and stop temperature are then restored to their previous values.
   * The status page shows the last check with forecast, surplus and tank temperature. Tap "Status" to check immediately.
-* **Hot-water temperature history** (Hot water → More… → "Verlauf Warmwassertemperatur"). Chart of today (0–24 h) with actual temperature (orange) and setpoint (blue dashed) from the Home Assistant history, plus min / max / current values.
+* **Hot-water temperature history** (Hot water → More… → "Verlauf Warmwassertemperatur"). Chart of today (0–24 h) with actual temperature (orange) and setpoint (blue dashed) from the Home Assistant history. The current setpoint and actual temperature are shown at the top.
 * **Show cooling functions** (Service → Heating / Cooling). Hides all cooling items in the panel when switched off. The setting is stored in the manager and applies to all devices.
 
 **Changed**
@@ -21,7 +21,7 @@
 * **Heating menu:**
   * **Heating curve** moved from the service menu to the heating menu, directly below "Time program".
   * "Boost" and "Rename heating circuit" are only shown with "Extended view" switched on.
-* **Hot-water menu:** "Setpoint temperature" is only shown with "Extended view" switched on.
+* **Hot-water menu:** new order: "Program times" and "Hot-water temperature history" at the top. New **Info** section at the bottom (as in the heating menu) with "Charging active", "Setpoint temperature" and "Actual temperature". "Thermal disinfection" is only shown with "Extended view" switched on.
 * **Time program:** "Switching times" renamed to **"Program times"** and moved directly below "Program".
 * **Heating curve chart:**
   * Setpoint shown as a **vertical blue dashed line** at the current outdoor temperature, labelled "Soll" at the top.
@@ -37,7 +37,7 @@
 
 Update via HACS (or replace the folder `custom_components/ems_esp_manager`), **restart Home Assistant** and reload the panel once (Ctrl+F5). Your mappings, heating circuit names and saved schedules are kept.
 
-**Panel version:** 2026.11.14
+**Panel version:** 2026.11.18
 
 ---
 
@@ -54,7 +54,7 @@ Update via HACS (or replace the folder `custom_components/ems_esp_manager`), **r
   * Die Optimierung startet einmal am Tag im Zeitfenster (Standard 11:00–15:00), wenn Vorhersage und Überschuss passen und der Speicher noch nicht warm ist. Dann setzt sie die Warmwasser-Betriebsart auf **Komfort** und die Komfort-Stopptemperatur auf die Zieltemperatur.
   * Sie endet, wenn die Zieltemperatur erreicht, das Zeitfenster vorbei oder die Funktion ausgeschaltet ist. Betriebsart und Stopptemperatur werden dann auf die vorherigen Werte zurückgesetzt.
   * Die Statusseite zeigt die letzte Prüfung mit Prognose, Überschuss und Speichertemperatur. „Status“ antippen prüft sofort.
-* **Verlauf Warmwassertemperatur** (Warmwasser → Mehr… → „Verlauf Warmwassertemperatur“). Grafik für heute (0–24 Uhr) mit Ist-Temperatur (orange) und Solltemperatur (blau gestrichelt) aus der Home-Assistant-Historie, dazu Min, Max und aktuelle Werte.
+* **Verlauf Warmwassertemperatur** (Warmwasser → Mehr… → „Verlauf Warmwassertemperatur“). Grafik für heute (0–24 Uhr) mit Ist-Temperatur (orange) und Solltemperatur (blau gestrichelt) aus der Home-Assistant-Historie. Oben stehen die aktuellen Werte für Soll und Ist.
 * **Kühlfunktionen anzeigen** (Service → Heizung / Kühlung). Im ausgeschalteten Zustand blendet das Panel alle Kühl-Punkte aus. Die Einstellung wird im Manager gespeichert und gilt auf allen Geräten.
 
 **Geändert**
@@ -62,7 +62,7 @@ Update via HACS (or replace the folder `custom_components/ems_esp_manager`), **r
 * **Heizen-Menü:**
   * **Heizkurve** vom Servicemenü ins Heizen-Menü verschoben, direkt unter „Zeitprogramm“.
   * „Boost“ und „Heizkreis umbenennen“ erscheinen nur bei eingeschalteter „Erweiterter Ansicht“.
-* **Warmwasser-Menü:** „Solltemperatur“ erscheint nur bei eingeschalteter „Erweiterter Ansicht“.
+* **Warmwasser-Menü:** neue Reihenfolge: „Programmzeiten“ und „Verlauf Warmwassertemperatur“ stehen oben. Neuer Bereich **Info** unten (wie im Heizen-Menü) mit „Ladung aktiv“, „Solltemperatur“ und „Isttemperatur“. „Thermische Desinfektion“ erscheint nur bei eingeschalteter „Erweiterter Ansicht“.
 * **Zeitprogramm:** „Schaltzeiten“ heißt jetzt **„Programmzeiten“** und steht direkt unter „Programm“.
 * **Heizkurve:**
   * Das Soll erscheint als **senkrechte blau gestrichelte Linie** bei der aktuellen Außentemperatur, oben beschriftet mit „Soll“.
@@ -78,4 +78,4 @@ Update via HACS (or replace the folder `custom_components/ems_esp_manager`), **r
 
 Über HACS aktualisieren (oder den Ordner `custom_components/ems_esp_manager` ersetzen), **Home Assistant neu starten** und das Panel einmal neu laden (Strg+F5). Zuordnungen, Heizkreis-Namen und gespeicherte Programmzeiten bleiben erhalten.
 
-**Panel-Version:** 2026.11.14
+**Panel-Version:** 2026.11.18
