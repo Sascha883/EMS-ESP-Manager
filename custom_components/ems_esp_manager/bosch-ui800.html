@@ -317,7 +317,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.11.02";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.11.14";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -337,7 +337,7 @@ const min2t = m => { m=Math.round(+m); if(isNaN(m)) return '–'; const h=Math.f
 const min2h = m => { m=+m; if(isNaN(m)) return '–'; return fmtN(Math.round(m/60),0)+' h'; };
 function toast(t,ms){ const el=$('#toast'); el.textContent=t; el.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>el.style.display='none',ms||2600); }
 
-let settings = Object.assign({ advanced:false, brightness:100, saver:0, lock:false, mode:'auto', url:'', token:'', showMissing:false }, LS.get('settings',{}));
+let settings = Object.assign({ showCooling:true, advanced:false, brightness:100, saver:0, lock:false, mode:'auto', url:'', token:'', showMissing:false }, LS.get('settings',{}));
 function saveSettings(){ LS.set('settings',settings); applyDisplay(); }
 let userMap = Object.assign({}, ENTITY_OVERRIDES, LS.get('map',{}));
 let emsIds = null;               // vom Manager: Werte, die EMS-ESP überhaupt liefert (Kurznamen), null = unbekannt
@@ -368,6 +368,9 @@ async function loadMgr(){
     haEms = Array.isArray(r.ha_ems) && r.ha_ems.length ? new Set(r.ha_ems) : null;
     haEmsOff = Array.isArray(r.ha_ems_off) ? r.ha_ems_off : [];
     createdIds = new Set(Array.isArray(r.created) ? r.created : []);
+    if(r.dhw_opt) DOPT = r.dhw_opt;
+    if(typeof r.show_cooling==='boolean') settings.showCooling = r.show_cooling;
+    HEATING_CIRCUITS.filter(hcExists).forEach(n=>{ if(n===1 && !SCHED[n]) loadSched(n,false); });   // für „Aktuelles Niveau“
     if(r.check && r.check.entities && !MX.chk){ MX.chk = r.check.entities; MX.chkAt = r.check.t ? new Date(r.check.t*1000) : new Date(); }
     LS.set('map', r.map||{});
     settings.hcNames = Object.assign({}, r.hc_names||{}); LS.set('settings',settings);
@@ -560,6 +563,7 @@ function wsConnect(url, token){
 // Verlauf (für Außentemperatur-Grafik): Liste [{t:ms, v:Zahl}]
 async function fetchHistory(id, hours){
   const start = new Date(Date.now()-hours*3600e3).toISOString();
+  if(conn.type==='demo' && /dhw/.test(id)){ const out=[]; const now=Date.now(); const soll=/settemp/.test(id); for(let t=now-hours*3600e3; t<=now; t+=600e3){ const h=new Date(t).getHours()+new Date(t).getMinutes()/60; out.push({t, v: soll ? (h>=12&&h<14?60:48) : 44+((h*60)%240)/240*8 + (h>=12&&h<14?(h-12)*7:0)}); } return out; }
   if(conn.type==='demo'){ const out=[]; const now=Date.now(); for(let t=now-hours*3600e3; t<=now; t+=900e3){ const h=new Date(t).getHours()+new Date(t).getMinutes()/60; out.push({t, v: 4+5*Math.max(0,Math.sin((h-7)/24*2*Math.PI))+Math.sin(t/2.7e6)*0.6}); } return out; }
   if(!conn.msg) return [];
   try{
@@ -606,11 +610,12 @@ function hcCustomerMenu(n){
   return { title:()=>hcName(n), items:[
     FN('Erweiterte Ansicht', ()=>{settings.advanced=!settings.advanced; saveSettings(); render();}, {tog:()=>settings.advanced}),
     NAV('Zeitprogramm','hcprog'+n),
+    NAV('Heizkurve','curve'+n),
     NAV('Kühlen','hccool'+n),
-    NAV('Boost','hcboost'+n,{val:()=>has('switch.'+hcX(n,'boost'))?(on('switch.'+hcX(n,'boost'))?'Ein':'Aus'):''}),
-    FN('Heizkreis umbenennen', ()=>renameHC(n), {val:()=>'✎'}),
+    NAV('Boost','hcboost'+n,{adv:true, val:()=>has('switch.'+hcX(n,'boost'))?(on('switch.'+hcX(n,'boost'))?'Ein':'Aus'):''}),
+    FN('Heizkreis umbenennen', ()=>renameHC(n), {adv:true, val:()=>'✎'}),
     SEC('Info'),
-    RO('sensor.'+hcX(n,'modetype'),'Aktuelles Niveau',{en:'modetype'}),
+    FN('Aktuelles Niveau', ()=>{}, {ro:true, val:()=>hcLevel(n)||'–'}),
     RO('sensor.'+hcX(n,'hpoperatingstate'),'Betriebszustand WP',{en:'hpoperatingstate'}),
     RO('binary_sensor.'+hcX(n,'vacationmode'),'Urlaub aktiv',{bin:true}),
     RO('sensor.'+hcX(n,'curroominfl'),'Aktueller Raumeinfluss',{adv:true}),
@@ -620,12 +625,12 @@ function hcCustomerMenu(n){
 function hcSubMenus(n){
   MENUS['hcprog'+n] = { title:'Zeitprogramm', items:[
     SEL('select.'+hcX(n,'program'),'Programm','hc.program'),
+    FN('Programmzeiten', ()=>openSched(n), {val:()=>schedSummary(n)}),
     SEC('Temperatureinstellungen'),
     N('number.'+hcX(n,'comforttemp'),'Heizen',{dec:1}),
     N('number.'+hcX(n,'ecotemp'),'Absenken',{dec:1}),
     N('number.'+hcX(n,'manualtemp'),'Manuell',{dec:1}),
     N('number.'+hcX(n,'tempautotemp'),'Temporär (Auto)',{dec:1,adv:true}),
-    FN('Schaltzeiten', ()=>openSched(n), {val:()=>schedSummary(n)}),
   ]};
   MENUS['hccool'+n] = { title:'Kühlen', items:[
     N('number.'+hcX(n,'cooltemp'),'Wunschtemperatur Kühlen',{dec:1}),
@@ -643,7 +648,6 @@ function hcServiceMenu(n){
     SEL('select.'+hcX(n,'hpmode'),'Systemfunktion','hc.hpmode'),
     SEC('Heizen'),
     SEL('select.'+hcX(n,'controlmode'),'Regelungsart','hc.controlmode'),
-    NAV('Heizkurve','curve'+n),
     N('number.'+hcX(n,'hpminflowtemp'),'Min. Vorlauftemp. WP'),
     N('number.'+hcX(n,'baseflowtemp'),'Fußpunkt',{adv:true}),
     N('number.'+hcX(n,'roominfluence'),'Raumeinfluss'),
@@ -762,9 +766,10 @@ const MENUS = {
     FN('Erweiterte Ansicht', ()=>{settings.advanced=!settings.advanced; saveSettings(); render();}, {tog:()=>settings.advanced}),
     NAV('Thermische Desinfektion','disinf',{val:()=>has('switch.thermostat_dhw_disinfecting')&&on('switch.thermostat_dhw_disinfecting')?'Läuft':''}),
     NAV('WW-Zirkulationspumpe','circ',{val:()=>has('select.thermostat_dhw_circmode')?selLabel('select.thermostat_dhw_circmode','dhw.circmode'):''}),
-    FN('Schaltzeiten', ()=>openSched('dhw'), {val:()=>schedSummary('dhw')}),
+    FN('Programmzeiten', ()=>openSched('dhw'), {val:()=>schedSummary('dhw')}),
     NAV('Tägliche Aufheizung','daily',{val:()=>has('switch.thermostat_dhw_dailyheating')?(on('switch.thermostat_dhw_dailyheating')?'Ein':'Aus'):''}),
-    RO(B('dhw_settemp'),'Solltemperatur'),
+    RO(B('dhw_settemp'),'Solltemperatur',{adv:true}),
+    NAV('Verlauf Warmwassertemperatur','dhwhist'),
     RO(B('dhw_curtemp2'),'Temperatur extern',{dec:1,adv:true}),
     N('number.thermostat_dhw_settemp','Wunschtemperatur Komfort',{adv:true}),
     N('number.thermostat_dhw_settemplow','Wunschtemperatur Eco',{adv:true}),
@@ -871,6 +876,7 @@ const MENUS = {
     SEC('Anlageneinstellungen'),
     SEL('select.thermostat_building','Dämpfung Gebäudeart','building'),
     SW('switch.thermostat_damping','Dämpfung Außentemperatur'),
+    FN('Kühlfunktionen anzeigen', ()=>{ settings.showCooling=!settings.showCooling; saveSettings(); mgrSave({show_cooling:settings.showCooling}); render(); }, {tog:()=>settings.showCooling, keep:true}),
     SW('switch.thermostat_solar','Solareinfluss aktiv',{adv:true}),
     RO(T('dampedoutdoortemp'),'Gedämpfte Außentemperatur',{dec:1}),
     N('number.thermostat_intoffset','Korrektur interner Fühler',{adv:true}),
@@ -1132,6 +1138,7 @@ const I = {
   away: sv('<path d="M7 17 20 6l13 11v16H7z"/><path d="M14 25h11M21 21l4 4-4 4"/>','0 0 40 40'),
   suitcase: sv('<rect x="6" y="12" width="28" height="20" rx="2"/><path d="M15 12V8h10v4"/>','0 0 40 40'),
   bars: sv('<rect x="7" y="25" width="5" height="7"/><rect x="17" y="17" width="5" height="15"/><rect x="27" y="7" width="5" height="25"/>','0 0 40 40'),
+  ems:  sv('<circle cx="14" cy="13" r="5"/><path d="M14 3v3M14 20v3M4 13h3M21 13h3M7 6l2 2M19 18l2 2M7 20l2-2M19 8l2-2"/><path d="M29 17c0 4-6 7-6 12a6 6 0 0 0 12 0c0-5-6-8-6-12z"/>','0 0 40 40'),
   hand: sv('<path d="M14 22V9a2 2 0 0 1 4 0v10M18 18V7a2 2 0 0 1 4 0v11M22 18V9a2 2 0 0 1 4 0v12M26 20v-6a2 2 0 0 1 4 0v10c0 6-4 10-9 10s-7-2-9-5l-5-7a2 2 0 0 1 3-3l3 3"/><path d="M6 6l3 3M4 12h4M10 3l1 4"/>','0 0 40 40'),
   tools: sv('<path d="M6 24 17 13M17 13a4 4 0 1 1 5-5l-3 3 2 2 3-3a4 4 0 0 1-5 5M8 5l6 6-2 2-6-6z"/><path d="M22 20h6M25 17v6" stroke="#1d8fd8"/>'),
   chevR: '<svg class="chev" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m2 2 8 8-8 8"/></svg>',
@@ -1193,7 +1200,7 @@ function render(){
   if(MGR_PAGE==='map'){ document.body.classList.add('mapx'); if(Date.now()-MX.last<3000){ clearTimeout(MX.rt); MX.rt=setTimeout(render,3000); return; } renderMapX(); return; }
   ACT=[]; const t=top_(); let h='';
   const V = {home:vHome, menu:()=>vMenu(t.id), edit:()=>vEdit(t), ledit:()=>vLEdit(t), hc:()=>vHC(t.n), dhwp:vDHW, extra:()=>vExtra(t),
-    ov:vOverview, energy:()=>vEnergy(t), absent:vAbsent, vac:vVac, curve:()=>vCurve(t.n), outdoor:()=>vOutdoor(t), conn:()=>vConn(t),
+    ov:vOverview, energy:()=>vEnergy(t), absent:vAbsent, vac:vVac, curve:()=>vCurve(t.n), outdoor:()=>vOutdoor(t), dhwhist:()=>vDhwHist(t), conn:()=>vConn(t),
     contact:vContact, panel:vPanel, map:()=>vMap(t), mapgrp:()=>vMapGroup(t), mapedit:()=>vMapEdit(t), sched:()=>vSched(t), schededit:()=>vSchedEdit(t), pin:()=>vPin(t), io:()=>vIO(t), rename:()=>vRename(t)};
   h = (V[t.type]||(()=>header('?')))();
   const oldBody = document.querySelector('#root .body');
@@ -1439,6 +1446,74 @@ document.addEventListener('click',ev=>{
   else if(k==='reset'){ if(confirm('Alle eigenen Zuordnungen löschen?')){ userMap=Object.assign({},ENTITY_OVERRIDES); saveMap({}); MX.msg='Eigene Zuordnungen gelöscht.'; go(); } }
 });
 
+
+/* ---------- EMS-Regelung → Warmwasseroptimierung (Logik läuft im Manager, nicht im Browser) ---------- */
+let DOPT = null;      // {config, state} vom Manager
+const hm = h => `${String(Math.floor(h)).padStart(2,'0')}:${String(Math.round((h%1)*60)).padStart(2,'0')}`;
+function doptCfg(){ return (DOPT && DOPT.config) || {}; }
+async function doptSave(patch){
+  if(!conn.msg){ toast('Nur in Home Assistant möglich'); return; }
+  if(MGR && MGR.is_admin===false){ toast('Ändern nur als Administrator'); return; }
+  const cfg = Object.assign({}, doptCfg(), patch);
+  // echte Entitäten nach Zuordnung / Entity-ID-Format
+  cfg.mode_entity = R('select.thermostat_dhw_mode');
+  cfg.stop_entity = R('number.boiler_dhw_comfstop');
+  cfg.temp_entity = R('sensor.boiler_dhw_curtemp');
+  const opts = at('select.thermostat_dhw_mode','options')||[], ci = (ENUM['dhw.mode']||[]).findIndex(x=>x[0]==='comfort');
+  cfg.comfort_option = opts[ci] || cfg.comfort_option || '';
+  try{ DOPT = await conn.msg({type:'ems_esp_manager/panel/dhwopt', config:cfg}); }
+  catch(e){ toast('Nicht gespeichert: '+((e&&e.message)||e)); }
+  render();
+}
+async function doptRun(){ if(!conn.msg) return; try{ DOPT = await conn.msg({type:'ems_esp_manager/panel/dhwopt', run:true}); }catch(e){} render(); }
+function doptEnt(filter){ return Object.keys(S).filter(filter).sort().map(e=>[e, ((S[e].attributes||{}).friendly_name||e)+' ('+S[e].state+((S[e].attributes||{}).unit_of_measurement?' '+S[e].attributes.unit_of_measurement:'')+')']); }
+function doptPick(title,key,filter,none){
+  const opts = doptEnt(filter); if(none) opts.unshift(['','– keine –']);
+  if(!opts.length){ toast('Keine passende Entität in Home Assistant gefunden'); return; }
+  push({type:'ledit',title,kind:'sel',v:doptCfg()[key]||'',opts,save:v=>doptSave({[key]:v})});
+}
+function doptNum(title,key,min,max,step,unit,fmt){
+  const t={type:'ledit',title,kind:'num',v:+doptCfg()[key]||min,min,max,step,unit,fmt:fmt||(v=>String(v))}; t.commit=()=>doptSave({[key]:t.v}); push(t);
+}
+function doptName(e){ return e ? (((S[e]||{}).attributes||{}).friendly_name || e) : '–'; }
+function doptStatus(){
+  if(!DOPT) return conn.msg ? 'wird geladen …' : 'nur in Home Assistant';
+  const c=DOPT.config, st=DOPT.state||{};
+  if(st.active) return 'Aktiv – heizt auf '+c.target+' °C';
+  if(!c.enabled) return 'Aus';
+  if(st.done===new Date().toISOString().slice(0,10)) return 'Heute erledigt';
+  return 'Bereit';
+}
+const PV_FILTER = e => e.startsWith('sensor.') && /^(k?wh)$/i.test(((S[e].attributes||{}).unit_of_measurement)||'');
+const W_FILTER  = e => e.startsWith('sensor.') && /^(k?w)$/i.test(((S[e].attributes||{}).unit_of_measurement)||'');
+MENUS.ems = { title:'EMS-Regelung', items:[
+  NAV('Warmwasseroptimierung','dhwopt',{val:()=>doptStatus()}),
+  TXT('Regelfunktionen des EMS-ESP Managers. Sie laufen in Home Assistant – auch wenn das Panel geschlossen ist.'),
+]};
+MENUS.dhwopt = { title:'Warmwasseroptimierung', get items(){ const c=doptCfg(), st=(DOPT&&DOPT.state)||{}, pv=(c.source||'pv')==='pv'; return [
+  FN('Warmwasseroptimierung', ()=>doptSave({enabled:!c.enabled}), {tog:()=>!!doptCfg().enabled}),
+  FN('Status', ()=>doptRun(), {val:()=>doptStatus()}),
+  ...(st.last?[TXT('Zuletzt: '+st.last)]:[]),
+  ...(st.checks && Object.keys(st.checks).length?[TXT('Prüfung '+(st.checked?new Date(st.checked).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'')+': '+Object.values(st.checks).join(' · '))]:[]),
+  SEC('Vorhersage'),
+  FN('Quelle', ()=>push({type:'ledit',title:'Quelle',kind:'sel',v:c.source||'pv',opts:[['pv','PV-Prognose'],['weather','Wetter']],save:v=>doptSave({source:v})}), {val:()=>pv?'PV-Prognose':'Wetter'}),
+  ...(pv ? [
+    FN('PV-Prognose', ()=>doptPick('PV-Prognose (kWh)','pv_entity',PV_FILTER), {val:()=>doptName(c.pv_entity)}),
+    FN('Mindest-Prognose', ()=>doptNum('Mindest-Prognose','pv_min',1,80,1,'kWh'), {val:()=>(c.pv_min??10)+' kWh'}),
+  ] : [
+    FN('Wetter', ()=>doptPick('Wetter','weather_entity',e=>e.startsWith('weather.')), {val:()=>doptName(c.weather_entity)}),
+    FN('Max. Bewölkung', ()=>doptNum('Max. Bewölkung','cloud_max',0,100,5,'%'), {val:()=>(c.cloud_max??40)+' %'}),
+  ]),
+  SEC('PV-Überschuss'),
+  FN('Überschuss', ()=>doptPick('PV-Überschuss / Einspeisung (W)','surplus_entity',W_FILTER,true), {val:()=>c.surplus_entity?doptName(c.surplus_entity):'nicht prüfen'}),
+  ...(c.surplus_entity?[FN('Mindest-Überschuss', ()=>doptNum('Mindest-Überschuss','surplus_min',100,10000,100,'W'), {val:()=>(c.surplus_min??1500)+' W'})]:[]),
+  SEC('Zeitfenster und Temperatur'),
+  FN('Beginn', ()=>doptNum('Beginn','start',6,20,0.5,'Uhr',hm), {val:()=>hm(c.start??11)+' Uhr'}),
+  FN('Ende', ()=>doptNum('Ende','end',7,22,0.5,'Uhr',hm), {val:()=>hm(c.end??15)+' Uhr'}),
+  FN('Zieltemperatur', ()=>doptNum('Zieltemperatur','target',50,65,1,'°C'), {val:()=>(c.target??60)+' °C'}),
+  TXT('Einmal am Tag im Zeitfenster: Passen Vorhersage und Überschuss und ist der Speicher noch nicht warm, setzt der Manager die Warmwasser-Betriebsart auf Komfort und die Komfort-Stopptemperatur auf die Zieltemperatur. Ist die Temperatur erreicht oder das Zeitfenster vorbei, werden Betriebsart und Stopptemperatur wieder auf die vorherigen Werte gesetzt. Überschuss: positiver Wert = Einspeisung.'),
+]; } };
+
 /* ---------- Startseite ---------- */
 function homeSlots(){
   const hcTiles = HEATING_CIRCUITS.filter(hcExists).map(n=>({html:tileHC(n), act:()=>push({type:'hc',n}), big:true}));
@@ -1449,7 +1524,7 @@ function homeSlots(){
     {col:[ {html:`${ico(on('switch.thermostat_absent')?I.away:I.present,34)}<div class="lbl" style="margin-top:12px">${on('switch.thermostat_absent')?'Abwesend':'Anwesend'}</div>`, act:()=>push({type:'absent'})},
            {html:`${ico(I.suitcase,34)}<div class="lbl" style="margin-top:12px">Urlaub</div>`, act:()=>push({type:'vac'})} ]},
     {col:[ {html:`${ico(I.bars,34)}<div class="lbl" style="margin-top:12px">Energie</div>`, act:()=>push({type:'energy',tab:0})},
-           {html:`${ico(I.hand,34)}<div class="lbl" style="margin-top:8px">Display-<br>Reinigung</div>`, act:()=>cleanMode()} ]},
+           {html:`${ico(I.ems,34)}<div class="lbl" style="margin-top:8px">EMS-<br>Regelung</div>`, act:()=>push({type:'menu',id:'ems'})} ]},
   ];
 }
 function tileWP(){
@@ -1471,8 +1546,9 @@ function tileHC(n){
 // zusätzlich die Raumtemperatur, falls ein Raumfühler vorhanden ist
 function hcSubLine(n){
   const room = has('sensor.'+hcX(n,'currtemp')), flow = has('sensor.'+hcX(n,'targetflowtemp'));
-  const f = flow ? `Vorlauf ${tempTxt('sensor.'+hcX(n,'targetflowtemp'))} berechnet` : '';
-  if(room) return `${tempTxt('sensor.'+hcX(n,'currtemp'))} gemessen${f?' · '+f.replace(' berechnet',''):''}`;
+  const lvl = hcLevel(n);
+  const f = flow ? `Vorlauf-Soll ${tempTxt('sensor.'+hcX(n,'targetflowtemp'))}${lvl?' '+lvl:''}` : (lvl||'');
+  if(room) return `${tempTxt('sensor.'+hcX(n,'currtemp'))} gemessen${f?' · '+f:''}`;
   return f || '– gemessen';
 }
 function tileDHW(){
@@ -1528,8 +1604,12 @@ function openService(){
 }
 
 /* ---------- Listen-Menüs ---------- */
+// Kühlfunktionen ausblenden (Service → Heizung / Kühlung → „Kühlfunktionen anzeigen“)
+const COOL_RE = /cool|dewoffset|roomtempdiff|hpcooling|vpcooling/i;
+function isCoolItem(it){ return it.cool || (it.id && COOL_RE.test(it.id)) || (it.to && /^hccool/.test(it.to)) || (it.t==='sec' && /Kühl/.test(it.label||'')); }
 function itemVisible(it){
   if(it.adv && !settings.advanced) return false;
+  if(!settings.showCooling && !it.keep && isCoolItem(it)) return false;
   if(it.hc && !hcExists(it.hc)) return false;
   if(it.id && !has(it.id) && !settings.showMissing) return false;
   return true;
@@ -1572,7 +1652,7 @@ function openNav(it){
   if(to==='bright') return push({type:'ledit',title:'Helligkeit',kind:'num',v:settings.brightness,min:20,max:100,step:10,unit:'%',save:v=>{settings.brightness=v;saveSettings();}});
   if(to==='saver') return push({type:'ledit',title:'Display aus nach',kind:'sel',v:settings.saver,opts:[[0,'Nie'],[1,'1 min'],[5,'5 min'],[10,'10 min'],[30,'30 min']],save:v=>{settings.saver=v;saveSettings();}});
   if(/^curve\d$/.test(to)) return push({type:'curve',n:+to.slice(5),svc});
-  if(['conn','contact','panel'].includes(to)) return push({type:to});
+  if(['conn','contact','panel','dhwhist'].includes(to)) return push({type:to});
   push({type:'menu',id:to,svc:svc||MENUS[to]&&MENUS[to].svc});
 }
 function vMenu(id){
@@ -1672,7 +1752,7 @@ function vHC(n){
     mid = hRoll(vals.map(v=>({html:`${Math.floor(v)}<sup>°${step<1?`<br>${Math.round((v%1)*10)}`:''}</sup>`})), idx, k=>{
       t.pend=vals[k]; clearTimeout(hcTimer); hcTimer=setTimeout(()=>{ hcTimer=null; setNumber(sId,t.pend); },1200); render(); });
   }
-  const mt = trEnum('modetype',st('sensor.'+hcX(n,'modetype')));
+  const mt = hcLevel(n);
   const hum = has('sensor.'+hcX(n,'remotehum')) ? `${ico(I.drop,24)}${fmtN(nv('sensor.'+hcX(n,'remotehum')),0)}%` : '';
   return header(hcName(n),{icon:ico(I.heat,26)})+`
    <div class="tabs">${tab(0,'Aus')}${tab(2,'Auto')}${tab(1,'Manuell')}</div>${mid}
@@ -1739,13 +1819,35 @@ function vOverview(){
 /* ---------- Zeitprogramm (Schaltzeiten) – über den EMS-ESP Manager ----------
    Telegramm 0x02C3 (HK1): 7 Tage × 6 Schaltpunkte [Modus, Zeit/15 min], 03 = Heizen, 01 = Absenken
    Telegramm 0x02FF (Warmwasser): gleicher Aufbau, Modus = Warmwasser-Stufe 00 Aus, 01 Eco+, 02 Eco, 03 Komfort */
-const SCHED = {};                 // hc (1..4) oder 'dhw' → {days:[[{time,mode}]], at, loading, err}
+const SCHED = {};
+/* Aktuelles Niveau Heizkreis: EMS-ESP liest beim UI800 das Niveau-Bit aus RC300Monitor(0x02A5) falsch
+   (zeigt „Absenken“, obwohl laut Zeitprogramm geheizt wird – Log 18.10.2026). Darum: im Auto-Betrieb aus dem
+   gelesenen Zeitprogramm bestimmen, sonst über die aktuelle Wunschtemperatur (Heizen- oder Absenktemperatur). */
+function hcLevel(n){
+  const md=selEnKey('select.'+hcX(n,'mode'),'hc.mode');
+  if(md==='manual') return 'Manuell'; if(md==='off') return 'Aus';
+  const c=SCHED[n];
+  if(c && c.days){
+    const now=new Date(), di=(now.getDay()+6)%7, mins=now.getHours()*60+now.getMinutes();
+    const tm=s_=>{ const [h,m]=s_.split(':').map(Number); return h*60+m; };
+    for(let k=0;k<8;k++){
+      const d=(di-k+7)%7, pts=(c.days[d]||[]).slice().sort((a,b)=>tm(a.time)-tm(b.time));
+      const cand = k===0 ? pts.filter(p=>tm(p.time)<=mins) : pts;
+      if(cand.length) return cand[cand.length-1].mode==='heat'?'Heizen':'Absenken';
+      if(!pts.length && (c.constant||[])[d]) return c.constant[d]==='heat'?'Heizen':'Absenken';
+      if(k===0 && pts.length) continue;
+    }
+  }
+  const sel=nv('number.'+hcX(n,'seltemp')), ct=nv('number.'+hcX(n,'comforttemp')), et=nv('number.'+hcX(n,'ecotemp'));
+  if(sel!=null && ct!=null && et!=null && ct!==et) return Math.abs(sel-ct)<=Math.abs(sel-et)?'Heizen':'Absenken';
+  return trEnum('modetype',st('sensor.'+hcX(n,'modetype')));
+}                 // hc (1..4) oder 'dhw' → {days:[[{time,mode}]], at, loading, err}
 // Stufen je Programm: m = Modus (wie vom Manager), i = Symbol, o = Deckkraft im Tagesbalken (0 = leer)
 const SPROG = n => n==='dhw'
-  ? {title:'Schaltzeiten Warmwasser', off:'off', first:'comfort',
+  ? {title:'Programmzeiten Warmwasser', off:'off', first:'comfort',
      modes:[{m:'comfort',l:'Komfort',i:'Komfort',o:1},{m:'eco',l:'Eco',i:'Eco',o:.65},{m:'ecoplus',l:'Eco+',i:'Eco+',o:.35},{m:'off',l:'Aus',i:'Aus',o:0}],
      def:[{time:'05:00',mode:'comfort'},{time:'23:00',mode:'off'}]}
-  : {title:'Schaltzeiten', off:'eco', first:'heat',
+  : {title:'Programmzeiten', off:'eco', first:'heat',
      modes:[{m:'heat',l:'Heizen',i:'☀',o:1},{m:'eco',l:'Absenken',i:'☾',o:0}],
      def:[{time:'06:00',mode:'heat'},{time:'22:00',mode:'eco'}]};
 const smode = (P,m) => P.modes.find(x=>x.m===m) || {m, l:m, i:'?', o:0};
@@ -1758,18 +1860,19 @@ async function loadSched(n, force){
   if(conn.type==='demo'){ c.days = c.days || demoSched(n); c.complete=true; c.err=null; render(); return; }
   if(!MGR || !conn.msg){ c.err='Nur mit dem EMS-ESP Manager verfügbar'; render(); return; }
   c.loading=true; c.err=null; scheduleRender();
-  try{ const r = await conn.msg(Object.assign({type:'ems_esp_manager/schedule/get', force:!!force}, schedMsg(n))); c.days=r.days; c.complete=r.complete; c.updated=r.updated; c.note=r.note; c.at=Date.now(); }
+  try{ const r = await conn.msg(Object.assign({type:'ems_esp_manager/schedule/get', force:!!force}, schedMsg(n))); c.days=r.days; c.constant=r.constant||[]; c.complete=r.complete; c.updated=r.updated; c.note=r.note; c.at=Date.now(); }
   catch(e){ c.err=(e&&e.message)||String(e); }
   c.loading=false; render();
 }
 function openSched(n){ push({type:'sched', n}); loadSched(n,false); }
-function schedSummary(n){ const c=SCHED[n]; if(!c||!c.days) return ''; const d=c.days[(new Date().getDay()+6)%7]||[]; const P=SPROG(n); return d.map(p=>smode(P,p.mode).i+' '+p.time).join('  '); }
+function schedSummary(n){ const c=SCHED[n]; if(!c||!c.days) return ''; const d=c.days[(new Date().getDay()+6)%7]||[]; const P=SPROG(n); const cm=(c.constant||[])[(new Date().getDay()+6)%7]; return d.length ? d.map(p=>smode(P,p.mode).i+' '+p.time).join('  ') : (cm?'ganztägig '+smode(P,cm).l:''); }
 const t2m = s => { const [h,m]=s.split(':').map(Number); return h*60+m; };
 const m2t = m => String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
 function dayBar(days, i, n){
-  const P=SPROG(n);
+  const P=SPROG(n), cst=((SCHED[n]||{}).constant)||[];
   const pts = (days[i]||[]).slice().sort((a,b)=>t2m(a.time)-t2m(b.time));
-  let prev = null; for(let k=1;k<=7 && !prev;k++){ const p=days[(i-k+7)%7]||[]; if(p.length) prev=p.slice().sort((a,b)=>t2m(a.time)-t2m(b.time)).pop().mode; }
+  let prev = (!pts.length && cst[i]) ? cst[i] : null;   // Tag ohne Schaltpunkte = ganztägig dieser Modus
+  for(let k=1;k<=7 && !prev;k++){ const j=(i-k+7)%7, p=days[j]||[]; if(p.length) prev=p.slice().sort((a,b)=>t2m(a.time)-t2m(b.time)).pop().mode; else if(cst[j]) prev=cst[j]; }
   let cur = prev||P.off, from = 0, segs=[];
   const op = m => smode(P,m).o;
   pts.forEach(p=>{ const m=t2m(p.time); if(op(cur) && m>from) segs.push([from,m,op(cur)]); cur=p.mode; from=m; });
@@ -1780,9 +1883,9 @@ function vSched(t){
   const c = SCHED[t.n]||{}; const P=SPROG(t.n);
   let body;
   if(c.err && !c.days) body = `<div class="note">${esc(c.err)}</div><div class="list"><div class="row" data-a="${a(()=>loadSched(t.n,true))}"><span class="k">Erneut lesen</span><span class="v">⟳</span></div></div>`;
-  else if(!c.days) body = `<div class="note">Schaltzeiten werden vom Regler gelesen …</div>`;
+  else if(!c.days) body = `<div class="note">Programmzeiten werden vom Regler gelesen …</div>`;
   else body = `<div class="list">${c.days.map((d,i)=>`<div class="row" data-a="${a(()=>push({type:'schededit',n:t.n,day:i,pts:JSON.parse(JSON.stringify(d||P.def))}))}">
-      <span class="sday">${DAYS[i]}</span>${d?dayBar(c.days,i,t.n):'<span class="sbar"></span>'}<span class="v" style="font-size:15px;min-width:118px;justify-content:flex-end">${d?(d.map(p=>`${smode(P,p.mode).i} ${p.time}`).join(' ')||'–'):'<span style="color:#888">unbekannt</span>'}${I.chevR}</span></div>`).join('')}
+      <span class="sday">${DAYS[i]}</span>${d?dayBar(c.days,i,t.n):'<span class="sbar"></span>'}<span class="v" style="font-size:15px;min-width:118px;justify-content:flex-end">${d?(d.map(p=>`${smode(P,p.mode).i} ${p.time}`).join(' ')||((c.constant||[])[i]?'ganztägig '+smode(P,c.constant[i]).i:'–')):'<span style="color:#888">unbekannt</span>'}${I.chevR}</span></div>`).join('')}
      <div class="row" data-a="${a(()=>loadSched(t.n,true))}"><span class="k">Vom Regler neu lesen<small>${c.loading?'liest … (bis ca. 30 s)':c.updated?'Stand '+new Date(c.updated).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''}</small></span><span class="v">⟳</span></div>
      ${c.note?`<div class="note" style="color:#f2b632">${esc(c.note)}</div>`:''}
      ${c.err?`<div class="note" style="color:#f2b632">${esc(c.err)}</div>`:''}
@@ -1811,7 +1914,7 @@ function vSchedEdit(t){
     try{
       const r = await conn.msg(Object.assign({type:'ems_esp_manager/schedule/set_days', days:targets, points:sorted}, schedMsg(t.n)));
       c.days=r.days; c.complete=r.complete; c.updated=r.updated; c.note=r.note; c.at=Date.now();
-      toast(r.confirmed?'Schaltzeiten gespeichert – vom Regler bestätigt':'Gesendet – Regler hat noch nicht bestätigt, bitte am Display prüfen', 5000); pop();
+      toast(r.confirmed?'Programmzeiten gespeichert – vom Regler bestätigt':'Gesendet – Regler hat noch nicht bestätigt, bitte am Display prüfen', 5000); pop();
     }catch(e){ toast('Nicht gespeichert: '+((e&&e.message)||e), 6000); }
   };
   return header(DAYN[t.day])+`<div class="body" style="bottom:84px"><div class="list">${rows}${add}${copyRow}</div></div>
@@ -1878,6 +1981,39 @@ function vOutdoor(t){
    <div class="bline"></div>
    <div class="bar" style="font-size:${PORTRAIT?16:20}px"><span class="info">Min: ${mn==null?'–':fmtN(mn,0)+'°'}</span><span class="info">Max: ${mx==null?'–':fmtN(mx,0)+'°'}</span><span class="info">Aktuell: ${cur==null?'–':fmtN(cur,0)+'°'}</span></div>`;
 }
+
+/* ---------- Warmwasser: Verlauf Ist/Soll (heute) ---------- */
+function vDhwHist(t){
+  const istId='sensor.boiler_dhw_curtemp', solId=B('dhw_settemp');
+  const mid=new Date(); mid.setHours(0,0,0,0); const startT=mid.getTime(), endT=startT+864e5, nowT=Date.now();
+  if(!t.loading && !t.data){ t.loading=true; const hrs=(nowT-startT)/36e5+0.5;
+    Promise.all([fetchHistory(istId,hrs), has(solId)?fetchHistory(solId,hrs):Promise.resolve([])]).then(([a,b])=>{ t.data={ist:a,sol:b}; t.loading=false; if(top_()===t) render(); }); }
+  const W=PORTRAIT?386:668, H=PORTRAIT?300:230, x0=44, x1=W-14, yT=14, yB=H-34;
+  const clip = arr => { const d=(arr||[]).filter(p=>p.t<=nowT).sort((p,q)=>p.t-q.t); const before=d.filter(p=>p.t<startT).pop(); const r=d.filter(p=>p.t>=startT); if(before) r.unshift({t:startT,v:before.v}); return r; };
+  const ist=clip(t.data&&t.data.ist), sol=clip(t.data&&t.data.sol);
+  const curI=nv(istId), curS=nv(solId);
+  if(curI!=null) ist.push({t:nowT,v:curI}); if(curS!=null) sol.push({t:nowT,v:curS});
+  const all=[...ist,...sol].map(p=>p.v);
+  const lo=Math.floor(((all.length?Math.min(...all):40)-3)/5)*5, hi=Math.ceil(((all.length?Math.max(...all):60)+3)/5)*5;
+  const X=tm=>x0+(tm-startT)/(endT-startT)*(x1-x0), Y=v=>yB-(v-lo)/(hi-lo)*(yB-yT);
+  const line = arr => arr.length ? arr.map((p,i)=>`${i?'L':'M'}${X(p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join(' ') : '';
+  const step = arr => arr.length ? arr.map((p,i)=>i?`H${X(p.t).toFixed(1)} V${Y(p.v).toFixed(1)}`:`M${X(p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join(' ') : '';
+  const grid=[]; for(let h=0;h<=24;h+=3){ const xx=X(startT+h*36e5); grid.push(`<line x1="${xx}" x2="${xx}" y1="${yT}" y2="${yB}" stroke="#222"/><text x="${xx}" y="${yB+20}" fill="#777" font-size="13" text-anchor="middle">${h}</text>`); }
+  for(let v=lo; v<=hi; v+=5){ grid.push(`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="#222"/><text x="${x0-6}" y="${Y(v)+4}" fill="#888" font-size="12" text-anchor="end">${v}°</text>`); }
+  const iv=ist.map(p=>p.v); const mn=iv.length?Math.min(...iv):null, mx=iv.length?Math.max(...iv):null;
+  const empty = !ist.length && !sol.length;
+  return header('Verlauf Warmwasser',{icon:ico(I.tap,26)})+`<div class="chart"><svg width="${W}" height="${H}">
+     ${grid.join('')}
+     <line x1="${X(nowT)}" x2="${X(nowT)}" y1="${yT}" y2="${yB}" stroke="#555" stroke-dasharray="2 4"/>
+     ${empty?`<text x="${W/2}" y="${H/2}" fill="#777" font-size="16" text-anchor="middle">${t.loading?'Lade Verlauf …':'Kein Verlauf verfügbar'}</text>`:''}
+     ${sol.length?`<path d="${step(sol)}" fill="none" stroke="#4fb3f6" stroke-width="2" stroke-dasharray="6 4"/>`:''}
+     ${ist.length?`<path d="${line(ist)}" fill="none" stroke="#f29c32" stroke-width="2.5"/>`:''}
+     <text x="${x1}" y="${yT+12}" fill="#f29c32" font-size="13" text-anchor="end">— Ist</text>
+     <text x="${x1-52}" y="${yT+12}" fill="#4fb3f6" font-size="13" text-anchor="end">- - Soll</text>
+   </svg></div>
+   <div class="bline"></div>
+   <div class="bar" style="font-size:${PORTRAIT?16:19}px"><span class="info">Min: ${mn==null?'–':fmtN(mn,0)+'°'}</span><span class="info">Max: ${mx==null?'–':fmtN(mx,0)+'°'}</span><span class="info">Ist: ${curI==null?'–':fmtN(curI,1)+'°'}</span><span class="info">Soll: ${curS==null?'–':fmtN(curS,0)+'°'}</span></div>`;
+}
 /* ---------- Energie ---------- */
 /* „Heute“ = Zählerstand jetzt − Zählerstand um 0:00 (aus dem HA-Verlauf) */
 const ETODAY = {at:0, day:'', v:{}, loading:false, err:null};
@@ -1943,13 +2079,20 @@ function vCurve(n){
   const grid=[]; for(let to=20;to>=-25;to-=(PORTRAIT?10:5)) grid.push(`<line x1="${X(to)}" x2="${X(to)}" y1="${y0}" y2="${H-30}" stroke="#222"/><text x="${X(to)}" y="${H-12}" fill="#888" font-size="12" text-anchor="middle">${to}°</text>`);
   for(let tf=20;tf<=Math.max(60,maxF+5);tf+=10) grid.push(`<line x1="${x0}" x2="${W-10}" y1="${Y(tf)}" y2="${Y(tf)}" stroke="#222"/><text x="${x0-8}" y="${Y(tf)+4}" fill="#888" font-size="12" text-anchor="end">${tf}°</text>`);
   const ot=nv('sensor.boiler_outdoortemp'), tf=nv('sensor.'+hcX(n,'targetflowtemp'));
-  const pt = ot!=null&&tf!=null?`<circle cx="${X(Math.max(-25,Math.min(20,ot)))}" cy="${Y(tf)}" r="6" fill="#1d8fd8"/><text x="${X(Math.max(-25,Math.min(20,ot)))+10}" y="${Y(tf)-8}" fill="#1d8fd8" font-size="13">Ist-Soll ${fmtN(tf,0)}°</text>`:'';
+  const istV = nv(n>1 && has('sensor.mixer_hc'+n+'_flowtemphc') ? 'sensor.mixer_hc'+n+'_flowtemphc' : 'sensor.boiler_curflowtemp');
+  const lblDy = (istV!=null && tf!=null && Math.abs(Y(istV)-Y(tf))<20 && Y(tf)>=Y(istV)) ? 22 : -8;   // Soll-Text nicht auf die Ist-Linie legen
+  // Soll: senkrechte blau gestrichelte Linie bei der aktuellen Außentemperatur, Beschriftung mit dem Vorlauf-Soll
+  const xo = ot!=null ? X(Math.max(-25,Math.min(20,ot))) : null;
+  const pt = xo!=null&&tf!=null?`<line x1="${xo}" x2="${xo}" y1="${y0}" y2="${H-30}" stroke="#4fb3f6" stroke-width="1.5" stroke-dasharray="6 4"/><text x="${xo+6}" y="${y0+14}" fill="#4fb3f6" font-size="13">Soll ${fmtN(tf,0)}°</text>`:'';
+  // aktuelle Ist-Vorlauftemperatur als grüne gestrichelte Linie
+  const ist = nv(n>1 && has('sensor.mixer_hc'+n+'_flowtemphc') ? 'sensor.mixer_hc'+n+'_flowtemphc' : 'sensor.boiler_curflowtemp');
+  const istLine = ist!=null ? `<line x1="${x0}" x2="${W-10}" y1="${Y(ist)}" y2="${Y(ist)}" stroke="#5fb34a" stroke-width="1.5" stroke-dasharray="6 4"/><text x="${W-14}" y="${Y(ist)-6}" fill="#5fb34a" font-size="13" text-anchor="end">Ist ${fmtN(ist,1)}°</text>` : '';
   const it = [N('number.'+hcX(n,'designtemp'),'Auslegungstemperatur'),N('number.thermostat_minexttemp','Min. Außentemperatur'),N('number.'+hcX(n,'offsettemp'),'Raumtemperatur-Offset'),
               N('number.'+hcX(n,'minflowtemp'),'Min. Vorlauftemperatur'),N('number.'+hcX(n,'maxflowtemp'),'Max. Vorlauftemperatur')];
-  return header(`Heizkurve HK${n}`,{svc:true})+`<div class="body"><svg width="${W}" height="${H}" style="display:block;margin:8px auto 0">
+  return header(`Heizkurve HK${n}`,{svc:!!(top_()&&top_().svc)})+`<div class="body"><svg width="${W}" height="${H}" style="display:block;margin:8px auto 0">
       ${grid.join('')}<line x1="${x0}" x2="${x0}" y1="${y0}" y2="${H-30}" stroke="#555"/>
       <line x1="${x0}" x2="${W-10}" y1="${Y(maxF)}" y2="${Y(maxF)}" stroke="#e2001a" stroke-dasharray="4 4"/><line x1="${x0}" x2="${W-10}" y1="${Y(minF)}" y2="${Y(minF)}" stroke="#2a8fd6" stroke-dasharray="4 4"/>
-      <path d="${d}" fill="none" stroke="#fff" stroke-width="2.5"/>${pt}
+      ${istLine}<path d="${d}" fill="none" stroke="#fff" stroke-width="2.5"/>${pt}
       <text x="${W-10}" y="${y0+4}" fill="#888" font-size="12" text-anchor="end">Näherung · ${floor?'Fußboden':'Heizkörper'}</text></svg>
     <div class="list">${it.map(rowHtml).join('')}</div></div>`;
 }
@@ -2106,6 +2249,7 @@ const HELP = {
   edit:'Wert mit ˄ / ˅, Mausrad oder Wischen auf der Zahl einstellen. Beim Zurückgehen wird der Wert an die Wärmepumpe gesendet.',
   ov:'Links Außentemperatur (antippen = Verlauf gestern/heute) und Betriebsdruck. Rechts Vor-/Rücklauf der Außeneinheit, Heizkreis und Warmwasser.',
   outdoor:'Verlauf der Außentemperatur aus der Home-Assistant-Historie.',
+  dhwhist:'Ist- und Solltemperatur Warmwasser von heute (0–24 Uhr) aus der Home-Assistant-Historie. Orange = Ist, blau gestrichelt = Soll.',
 };
 function showHelp(){
   const t=top_(); const txt = HELP[t.type] || (t.type==='menu'?`„${(typeof (MENUS[t.id]||{}).title==='function'?MENUS[t.id].title():(MENUS[t.id]||{}).title)}“: Pfeil = Untermenü/Einstellung, Schalter wirken sofort.`:'');

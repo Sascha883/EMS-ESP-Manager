@@ -384,8 +384,20 @@ class ScheduleManager:
             decode_day(self.cache.day_bytes(type_id, d), prog) if self.cache.day_known(type_id, d) else None
             for d in range(7)
         ]
+        # day without any switch point: the controller keeps the mode byte of the
+        # first point -> whole day in this mode (log 16.10.2026: all "03 FF" = Heizen all week)
+        constant = [
+            prog.names.get(self.cache.day_bytes(type_id, d)[0]) if days[d] == [] else None
+            for d in range(7)
+        ]
+        if note is None and all(d == [] for d in days):
+            mode = constant[0]
+            label = {"heat": "Heizen", "eco": "Absenken", "off": "Aus", "ecoplus": "Eco+",
+                     "comfort": "Komfort"}.get(mode or "", mode or "?")
+            note = f"Im Regler sind für dieses Programm keine Schaltzeiten hinterlegt – ganztägig {label}."
         ts = self.cache.updated.get(type_id)
         return {
+            "constant": constant,
             "hc": hc,
             "prog": prog.key,
             "label": prog.label,
