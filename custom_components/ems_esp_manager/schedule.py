@@ -302,13 +302,23 @@ class ScheduleManager:
         self.store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}.schedule")
         self._lock = asyncio.Lock()
         self._loaded = False
+        self._load_task: asyncio.Task | None = None
         self._read_cmd_ok: bool | None = None
 
     async def async_load(self) -> None:
+        """Load the stored programs once (concurrent callers wait for the same load)."""
         if self._loaded:
             return
+        if self._load_task is None:
+            self._load_task = self.hass.async_create_task(self._async_do_load(), eager_start=True)
+        await asyncio.shield(self._load_task)
+
+    async def _async_do_load(self) -> None:
+        try:
+            self.cache.load_dict(await self.store.async_load() or {})
+        except Exception:  # noqa: BLE001 - a broken file must not stop the manager
+            _LOGGER.warning("Stored switch programs unreadable – starting empty", exc_info=True)
         self._loaded = True
-        self.cache.load_dict(await self.store.async_load() or {})
 
     @callback
     def _schedule_save(self) -> None:

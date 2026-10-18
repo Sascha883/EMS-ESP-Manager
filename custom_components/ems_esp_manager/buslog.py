@@ -92,11 +92,9 @@ class BusLogCardView(HomeAssistantView):
 async def ws_buslog_info(hass: HomeAssistant, connection, msg) -> None:
     logs = _logs(hass)
     lines = sum(len(log.history) for log in logs)
-    telegrams = 0
-    from .log import MAX_DOWNLOAD, _is_telegram
+    from .log import MAX_DOWNLOAD
 
-    for log in logs:
-        telegrams += sum(1 for h in log.history if _is_telegram(h[3]))
+    telegrams = sum(log.telegrams for log in logs)
     connection.send_result(
         msg["id"],
         {

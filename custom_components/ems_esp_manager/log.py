@@ -79,6 +79,7 @@ class EmsEspLog:
         self._quiet = False        # last disconnect was only a silence timeout
         self._task: asyncio.Task | None = None
         self._notify_handle: asyncio.TimerHandle | None = None
+        self.telegrams = 0          # telegram lines in self.history (kept up to date, no re-scan)
 
     # ------------------------------------------------------------ public
     def start(self, task_factory: Callable[[object, str], asyncio.Task]) -> None:
@@ -88,19 +89,31 @@ class EmsEspLog:
         if self._task:
             self._task.cancel()
             self._task = None
+        if self._notify_handle is not None:
+            self._notify_handle.cancel()
+            self._notify_handle = None
         self.connected = False
 
     def clear(self) -> None:
         self.lines.clear()
         self.history.clear()
+        self.telegrams = 0
         self.since = None
         self._on_update()
+
+    def _history_add(self, row: tuple[str, str, str, str]) -> None:
+        """Append to the download buffer and keep the telegram counter right."""
+        if len(self.history) == self.history.maxlen and _is_telegram(self.history[0][3]):
+            self.telegrams -= 1
+        self.history.append(row)
+        if _is_telegram(row[3]):
+            self.telegrams += 1
 
     def note(self, text: str) -> None:
         """Own status line of the manager (level 'M') – shows up in the download."""
         now = dt_util.now()
         ha_time = now.strftime("%Y-%m-%d %H:%M:%S.") + f"{now.microsecond // 1000:03d}"
-        self.history.append((ha_time, "", "M", f"[Manager] {text}"))
+        self._history_add((ha_time, "", "M", f"[Manager] {text}"))
         self.lines.append(f"{now.strftime('%H:%M:%S')} [Manager] {text}")
         _LOGGER.info("EMS-ESP log: %s", text)
         self._on_update()
@@ -149,7 +162,7 @@ class EmsEspLog:
         level = LEVEL_CHAR.get(int(event.get("l", 6)), "?")
         now = dt_util.now()
         ha_time = now.strftime("%Y-%m-%d %H:%M:%S.") + f"{now.microsecond // 1000:03d}"
-        self.history.append((ha_time, esp_time, level, text))
+        self._history_add((ha_time, esp_time, level, text))
         for listener in self.listeners:
             try:
                 listener(text)
@@ -227,6 +240,14 @@ class EmsEspLog:
         async with self._api.session.get(
             self._api.log_url(), headers=headers, timeout=timeout
         ) as resp:
+            if resp.status in (401, 403):
+                # token expired (e.g. after an EMS-ESP restart or password change):
+                # sign in again, otherwise every retry fails the same way
+                try:
+                    await self._api.sign_in()
+                except Exception as err:  # noqa: BLE001
+                    raise RuntimeError(f"HTTP {resp.status}, Anmeldung fehlgeschlagen ({err})") from None
+                raise RuntimeError(f"HTTP {resp.status} – neu angemeldet")
             if resp.status != 200:
                 raise RuntimeError(f"HTTP {resp.status}")
             self.connected = True

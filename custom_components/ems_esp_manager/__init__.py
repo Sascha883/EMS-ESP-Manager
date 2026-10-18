@@ -68,8 +68,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: EmsEspConfigEntry) -> bo
 
     # live EMS bus log (server-sent events from the gateway)
     runtime = entry.runtime_data
-    runtime.log = EmsEspLog(api, lambda: status.async_update_listeners())
-    runtime.log.listeners.append(async_setup_schedule(hass).cache.feed)
+    runtime.log = EmsEspLog(api, runtime.notify_log)
+    schedule = async_setup_schedule(hass)
+    # load the stored switch programs before the log stream can feed new telegrams
+    await schedule.async_load()
+    runtime.log.listeners.append(schedule.cache.feed)
 
     async def _log_connected(quiet: bool = False) -> None:
         """Log stream (re)connected – e.g. after a restart or firmware update.

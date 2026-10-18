@@ -203,6 +203,8 @@ class EmsEspSensor(EmsEspEntity, CoordinatorEntity, SensorEntity):
     """A status sensor."""
 
     entity_description: EmsEspSensorDescription
+    # big attributes that change all the time – keep them out of the recorder database
+    _unrecorded_attributes = frozenset({"lines", "devices"})
 
     def __init__(self, entry: EmsEspConfigEntry, description: EmsEspSensorDescription) -> None:
         rt = entry.runtime_data
@@ -217,6 +219,10 @@ class EmsEspSensor(EmsEspEntity, CoordinatorEntity, SensorEntity):
         # values that depend on both coordinators (channel/latest, progress)
         other = self._runtime.status if self.entity_description.from_releases else self._runtime.releases
         self.async_on_remove(other.async_add_listener(self.async_write_ha_state))
+        if self.entity_description.key == "bus_log":
+            listeners = self._runtime.log_listeners
+            listeners.append(self.async_write_ha_state)
+            self.async_on_remove(lambda: listeners.remove(self.async_write_ha_state))
 
     @property
     def available(self) -> bool:

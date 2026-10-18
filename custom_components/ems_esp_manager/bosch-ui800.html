@@ -317,7 +317,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.11.18";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.11.21";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -430,11 +430,15 @@ function trEnum(enumKey, raw){
 const S = {};                    // entity_id → {state, attributes}
 let conn = { type:'none', ready:false, send:null };
 const resolved = {};             // Standard-ID → tatsächliche ID (oder null)
+const SEEN_ENT = new Set();      // Entitäten, die das Panel angezeigt/gelesen hat – nur deren Änderungen lösen ein Neuzeichnen aus
+// Seiten, die beliebige HA-Entitäten auflisten (Zuordnung) – dort jede Änderung neu zeichnen
+const LIST_PAGES = ['map','mapgrp'];
 
 // UI800 (HMI 800) mit EMS-ESP 3.8.x: diese Werte gibt es nur für das ganze Gerät
 // (thermostat_summertemp …), nicht je Heizkreis – EMS-ESP 3.9 liefert sie je nach Regler pro HK (#3257)
 const UI800_GLOBAL = ['hpoperatingmode','summertemp','instantstart','coolstart','heatondelay','heatoffdelay','coolondelay','cooloffdelay'];
-function R(id){                  // Entität auflösen
+function R(id){ const r = R0(id); SEEN_ENT.add(r); return r; }
+function R0(id){                 // Entität auflösen
   const m = /^(\w+)\.thermostat_hc\d+_(\w+)$/.exec(id);
   // UI800-Werte: gibt es die anlagenweite Entität, ist sie die gültige – die HK-Entität steht bei
   // EMS-ESP 3.8.x dann oft auf 0 (z. B. hc1_summertemp 0, summertemp 21; Forum 11.10.2026)
@@ -507,7 +511,17 @@ function setSelectIdx(id,i){ const opts=at(id,'options')||[]; if(opts[i]==null) 
 function setSwitch(id,v){ const d=R(id).split('.')[0]; return callService(d==='input_boolean'?'input_boolean':'switch', v?'turn_on':'turn_off',{entity_id:R(id)}); }
 
 function onStates(list){ list.forEach(e=>S[e.entity_id]={state:e.state,attributes:e.attributes||{}}); for(const k in resolved) delete resolved[k]; scheduleRender(); }
-function onChange(e){ if(!e) return; if(e.new_state) S[e.entity_id]={state:e.new_state.state,attributes:e.new_state.attributes||{}}; else delete S[e.entity_id]; if(!resolved[e.entity_id]) for(const k in resolved) if(resolved[k]==null) delete resolved[k]; scheduleRender(); }
+function onChange(e){
+  if(!e) return;
+  const id=e.entity_id, had=id in S;
+  if(e.new_state) S[id]={state:e.new_state.state,attributes:e.new_state.attributes||{}}; else delete S[id];
+  const added=!had||!e.new_state;   // Entität neu oder entfernt → Zuordnung neu prüfen
+  if(added && !resolved[id]) for(const k in resolved) if(resolved[k]==null) delete resolved[k];
+  // Änderungen anderer HA-Entitäten (Bus-Log, Lichter, Sensoren …) zeichnen das Panel nicht neu –
+  // spart auf Wandtablets viel Rechenzeit (vorher bis zu 4× pro Sekunde komplett neu)
+  if(!added && !SEEN_ENT.has(id) && !LIST_PAGES.includes((top_()||{}).type)) return;
+  scheduleRender();
+}
 
 async function connect(){
   // a) im HA-Iframe → Verbindung des Frontends mitbenutzen
@@ -519,7 +533,10 @@ async function connect(){
         const c = hass.connection;
         conn = { type:'hass', ready:true, msg:m=>c.sendMessagePromise(m), call:(d,s,data)=>c.sendMessagePromise({type:'call_service',domain:d,service:s,service_data:data}) };
         onStates(Object.values(hass.states));
-        c.subscribeEvents(ev=>onChange(ev.data),'state_changed');
+        // Abo der HA-Verbindung beim Schließen/Neuladen des Panels wieder abmelden –
+        // sonst bleibt es in der HA-Oberfläche bis zum nächsten Browser-Neuladen bestehen
+        const unsubP = c.subscribeEvents(ev=>onChange(ev.data),'state_changed');
+        window.addEventListener('pagehide',()=>{ Promise.resolve(unsubP).then(u=>{ if(typeof u==='function') u(); }).catch(()=>{}); },{once:true});
         await loadMgr();
         return;
       }
@@ -765,7 +782,6 @@ const MENUS = {
   dhw: { title:'Warmwasser', items:[
     FN('Erweiterte Ansicht', ()=>{settings.advanced=!settings.advanced; saveSettings(); render();}, {tog:()=>settings.advanced}),
     FN('Programmzeiten', ()=>openSched('dhw'), {val:()=>schedSummary('dhw')}),
-    NAV('Verlauf Warmwassertemperatur','dhwhist'),
     NAV('Thermische Desinfektion','disinf',{adv:true, val:()=>has('switch.thermostat_dhw_disinfecting')&&on('switch.thermostat_dhw_disinfecting')?'Läuft':''}),
     NAV('WW-Zirkulationspumpe','circ',{val:()=>has('select.thermostat_dhw_circmode')?selLabel('select.thermostat_dhw_circmode','dhw.circmode'):''}),
     NAV('Tägliche Aufheizung','daily',{val:()=>has('switch.thermostat_dhw_dailyheating')?(on('switch.thermostat_dhw_dailyheating')?'Ein':'Aus'):''}),
@@ -774,6 +790,7 @@ const MENUS = {
     N('number.thermostat_dhw_settemplow','Wunschtemperatur Eco',{adv:true}),
     SEC('Info'),
     RO('binary_sensor.boiler_dhw_charging','Ladung aktiv',{bin:true}),
+    NAV('Verlauf Warmwassertemperatur','dhwhist'),
     RO(B('dhw_settemp'),'Solltemperatur'),
     RO(B('dhw_curtemp'),'Isttemperatur',{dec:1}),
   ]},
@@ -2075,26 +2092,32 @@ function vCurve(n){
   const room = p('seltemp')??20, minExt = nv('number.thermostat_minexttemp')??-12;
   const floor = selEnKey('select.'+hcX(n,'heatingtype'),'hc.heatingtype')==='floor'; const ex = floor?1/1.1:1/1.3;
   const f = to=>{ if(to>=room) return Math.max(minF,room); const r=Math.pow((room-to)/(room-minExt),ex); return Math.min(maxF,Math.max(minF, room+(design-room)*r + off + (room-20)*1.5)); };
-  const W=PORTRAIT?378:660,H=PORTRAIT?250:240,x0=PORTRAIT?36:50,y0=20; const X=to=>x0+(20-to)/45*(W-x0-10); const Y=tf=>y0+(1-(tf-15)/(Math.max(60,maxF+5)-15))*(H-y0-30);
-  let d=''; for(let to=20;to>=-25;to-=0.5) d+=(d?'L':'M')+X(to).toFixed(1)+' '+Y(f(to)).toFixed(1);
-  const grid=[]; for(let to=20;to>=-25;to-=(PORTRAIT?10:5)) grid.push(`<line x1="${X(to)}" x2="${X(to)}" y1="${y0}" y2="${H-30}" stroke="#222"/><text x="${X(to)}" y="${H-12}" fill="#888" font-size="12" text-anchor="middle">${to}°</text>`);
-  for(let tf=20;tf<=Math.max(60,maxF+5);tf+=10) grid.push(`<line x1="${x0}" x2="${W-10}" y1="${Y(tf)}" y2="${Y(tf)}" stroke="#222"/><text x="${x0-8}" y="${Y(tf)+4}" fill="#888" font-size="12" text-anchor="end">${tf}°</text>`);
   const ot=nv('sensor.boiler_outdoortemp'), tf=nv('sensor.'+hcX(n,'targetflowtemp'));
   const istV = nv(n>1 && has('sensor.mixer_hc'+n+'_flowtemphc') ? 'sensor.mixer_hc'+n+'_flowtemphc' : 'sensor.boiler_curflowtemp');
+  // Y-Bereich an Kurve, Min/Max und Ist/Soll anpassen (statt fest 15–60 °C)
+  const vals=[minF,maxF,f(20),f(-25)]; if(istV!=null) vals.push(istV); if(tf!=null) vals.push(tf);
+  let lo=Math.floor((Math.min(...vals)-4)/5)*5, hi=Math.ceil((Math.max(...vals)+4)/5)*5; if(hi-lo<20){ const c=(hi+lo)/2; lo=Math.floor((c-10)/5)*5; hi=lo+20; }
+  const stepY = hi-lo>40 ? 10 : 5;
+  const W=PORTRAIT?378:660,H=PORTRAIT?250:240,x0=PORTRAIT?36:50,y0=28; const X=to=>x0+(20-to)/45*(W-x0-10); const Y=v=>y0+(1-(v-lo)/(hi-lo))*(H-y0-30);
+  let d=''; for(let to=20;to>=-25;to-=0.5) d+=(d?'L':'M')+X(to).toFixed(1)+' '+Y(f(to)).toFixed(1);
+  const grid=[]; for(let to=20;to>=-25;to-=(PORTRAIT?10:5)) grid.push(`<line x1="${X(to)}" x2="${X(to)}" y1="${y0}" y2="${H-30}" stroke="#222"/><text x="${X(to)}" y="${H-12}" fill="#888" font-size="12" text-anchor="middle">${to}°</text>`);
+  for(let v=lo;v<=hi;v+=stepY) grid.push(`<line x1="${x0}" x2="${W-10}" y1="${Y(v)}" y2="${Y(v)}" stroke="#222"/><text x="${x0-8}" y="${Y(v)+4}" fill="#888" font-size="12" text-anchor="end">${v}°</text>`);
   const lblDy = (istV!=null && tf!=null && Math.abs(Y(istV)-Y(tf))<20 && Y(tf)>=Y(istV)) ? 22 : -8;   // Soll-Text nicht auf die Ist-Linie legen
   // Soll: senkrechte blau gestrichelte Linie bei der aktuellen Außentemperatur, Beschriftung mit dem Vorlauf-Soll
   const xo = ot!=null ? X(Math.max(-25,Math.min(20,ot))) : null;
   const pt = xo!=null&&tf!=null?`<line x1="${xo}" x2="${xo}" y1="${y0}" y2="${H-30}" stroke="#4fb3f6" stroke-width="1.5" stroke-dasharray="6 4"/><text x="${xo+6}" y="${y0+14}" fill="#4fb3f6" font-size="13">Soll ${fmtN(tf,0)}°</text>`:'';
   // aktuelle Ist-Vorlauftemperatur als grüne gestrichelte Linie
   const ist = nv(n>1 && has('sensor.mixer_hc'+n+'_flowtemphc') ? 'sensor.mixer_hc'+n+'_flowtemphc' : 'sensor.boiler_curflowtemp');
-  const istLine = ist!=null ? `<line x1="${x0}" x2="${W-10}" y1="${Y(ist)}" y2="${Y(ist)}" stroke="#5fb34a" stroke-width="1.5" stroke-dasharray="6 4"/><text x="${W-14}" y="${Y(ist)-6}" fill="#5fb34a" font-size="13" text-anchor="end">Ist ${fmtN(ist,1)}°</text>` : '';
+  // Ist-Beschriftung rechts: über der Linie, außer die Kurve liegt dort knapp darüber → dann darunter
+  const istLy = ist==null ? 0 : (()=>{ const yi=Y(ist), yc=Y(f(-25)); return (yi-yc>=0 && yi-yc<24 && yi+18<=H-32) ? yi+16 : yi-6; })();
+  const istLine = ist!=null ? `<line x1="${x0}" x2="${W-10}" y1="${Y(ist)}" y2="${Y(ist)}" stroke="#5fb34a" stroke-width="1.5" stroke-dasharray="6 4"/><text x="${W-14}" y="${istLy}" fill="#5fb34a" font-size="13" text-anchor="end">Ist ${fmtN(ist,1)}°</text>` : '';
   const it = [N('number.'+hcX(n,'designtemp'),'Auslegungstemperatur'),N('number.thermostat_minexttemp','Min. Außentemperatur'),N('number.'+hcX(n,'offsettemp'),'Raumtemperatur-Offset'),
               N('number.'+hcX(n,'minflowtemp'),'Min. Vorlauftemperatur'),N('number.'+hcX(n,'maxflowtemp'),'Max. Vorlauftemperatur')];
   return header(`Heizkurve HK${n}`,{svc:!!(top_()&&top_().svc)})+`<div class="body"><svg width="${W}" height="${H}" style="display:block;margin:8px auto 0">
       ${grid.join('')}<line x1="${x0}" x2="${x0}" y1="${y0}" y2="${H-30}" stroke="#555"/>
       <line x1="${x0}" x2="${W-10}" y1="${Y(maxF)}" y2="${Y(maxF)}" stroke="#e2001a" stroke-dasharray="4 4"/><line x1="${x0}" x2="${W-10}" y1="${Y(minF)}" y2="${Y(minF)}" stroke="#2a8fd6" stroke-dasharray="4 4"/>
       ${istLine}<path d="${d}" fill="none" stroke="#fff" stroke-width="2.5"/>${pt}
-      <text x="${W-10}" y="${y0+4}" fill="#888" font-size="12" text-anchor="end">Näherung · ${floor?'Fußboden':'Heizkörper'}</text></svg>
+      <text x="${W-10}" y="${y0-10}" fill="#888" font-size="12" text-anchor="end">${floor?'Fußboden':'Heizkörper'}</text></svg>
     <div class="list">${it.map(rowHtml).join('')}</div></div>`;
 }
 
@@ -2246,7 +2269,7 @@ const HELP = {
   hc:'Aus / Auto / Manuell wählt die Betriebsart. Wunschtemperatur mit den Pfeilen oder durch Antippen der Nachbarwerte ändern – sie wird nach ca. 1 s an EMS-ESP gesendet.',
   dhwp:'Eco+: beste Wirtschaftlichkeit · Eco: mittlerer Komfort · Komfort: bester Warmwasserkomfort.',
   energy:'Umweltanteil = erzeugte Wärme − Strom Kompressor − Strom Zuheizer (Werte aus EMS-ESP).',
-  curve:'Die Kurve ist eine Näherung aus Auslegungstemperatur, min. Außentemperatur und Offset. Der blaue Punkt ist der aktuelle Vorlauf-Sollwert der WP.',
+  curve:'Die Kurve wird aus Auslegungstemperatur, min. Außentemperatur und Offset berechnet. Die blau gestrichelte Linie zeigt das aktuelle Vorlauf-Soll der WP, die grün gestrichelte die Ist-Vorlauftemperatur.',
   edit:'Wert mit ˄ / ˅, Mausrad oder Wischen auf der Zahl einstellen. Beim Zurückgehen wird der Wert an die Wärmepumpe gesendet.',
   ov:'Links Außentemperatur (antippen = Verlauf gestern/heute) und Betriebsdruck. Rechts Vor-/Rücklauf der Außeneinheit, Heizkreis und Warmwasser.',
   outdoor:'Verlauf der Außentemperatur aus der Home-Assistant-Historie.',
