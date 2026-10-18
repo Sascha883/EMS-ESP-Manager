@@ -432,6 +432,13 @@ async def _ems_devices(hass: HomeAssistant) -> list[dict] | None:
     return None
 
 
+def _dhw_opt_snapshot(hass: HomeAssistant) -> dict | None:
+    from .dhw_optimizer import get as _get_opt
+
+    opt = _get_opt(hass)
+    return opt.snapshot() if opt else None
+
+
 def _mgr_or_error(hass: HomeAssistant, connection, msg) -> PanelManager | None:
     mgr = _get(hass)
     if mgr is None:
@@ -459,6 +466,8 @@ async def ws_get(hass: HomeAssistant, connection, msg) -> None:
             "ha_ems": ems_ha_entities(hass),
             "ha_ems_off": ems_ha_entities(hass, disabled=True),
             "created": sorted((mgr.data.get("created") or {}).keys()),
+            "dhw_opt": _dhw_opt_snapshot(hass),
+            "show_cooling": mgr.data.get("show_cooling", True),
             "hc_names": mgr.data["hc_names"],
             "is_admin": connection.user.is_admin,
         },
@@ -554,9 +563,37 @@ async def ws_uncreate(hass: HomeAssistant, connection, msg) -> None:
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): f"{DOMAIN}/panel/dhwopt",
+        vol.Optional("config"): dict,
+        vol.Optional("run", default=False): bool,
+    }
+)
+@websocket_api.async_response
+@_report_errors
+async def ws_dhwopt(hass: HomeAssistant, connection, msg) -> None:
+    """EMS-Regelung → Warmwasseroptimierung: save settings (admin) and/or check now."""
+    from .dhw_optimizer import get as _get_opt
+
+    opt = _get_opt(hass)
+    if opt is None:
+        connection.send_error(msg["id"], "not_loaded", "EMS-ESP Manager nicht geladen")
+        return
+    if "config" in msg:
+        if not connection.user.is_admin:
+            connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+            return
+        await opt.async_save_cfg(msg["config"])
+    elif msg["run"]:
+        await opt.async_tick()
+    connection.send_result(msg["id"], opt.snapshot())
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): f"{DOMAIN}/panel/save",
         vol.Optional("map"): {str: str},
         vol.Optional("hc_names"): {vol.Coerce(str): str},
+        vol.Optional("show_cooling"): bool,
     }
 )
 @websocket_api.require_admin
@@ -580,6 +617,8 @@ async def ws_save(hass: HomeAssistant, connection, msg) -> None:
         mgr.data["hc_names"] = {
             k: v.strip()[:20] for k, v in msg["hc_names"].items() if v.strip()
         }
+    if "show_cooling" in msg:
+        mgr.data["show_cooling"] = msg["show_cooling"]
     await mgr.async_save()
     connection.send_result(msg["id"], {"map": mgr.data["map"], "hc_names": mgr.data["hc_names"]})
 
@@ -682,11 +721,14 @@ async def async_setup_panel(hass: HomeAssistant, options: dict[str, Any]) -> Pan
         if not hass.data.get(f"{_DATA}_http"):
             hass.http.register_view(PanelView())
             hass.http.register_view(PanelAdminView())
-            for cmd in (ws_get, ws_check, ws_create, ws_uncreate, ws_save, ws_info, ws_upload, ws_restore, ws_reset):
+            for cmd in (ws_get, ws_check, ws_create, ws_uncreate, ws_dhwopt, ws_save, ws_info, ws_upload, ws_restore, ws_reset):
                 websocket_api.async_register_command(hass, cmd)
             hass.data[f"{_DATA}_http"] = True
     mgr.options = dict(options)
     _register_sidebar(hass, options)
+    from .dhw_optimizer import async_setup as _setup_dhw_opt
+
+    _setup_dhw_opt(hass, mgr)
     return mgr
 
 
@@ -711,6 +753,10 @@ def _register_sidebar(hass: HomeAssistant, options: dict[str, Any]) -> None:
 @callback
 def async_remove_panel(hass: HomeAssistant) -> None:
     """Remove the sidebar entry (views stay registered, they answer 404)."""
+    from .dhw_optimizer import _DATA as _DHW
+
+    if (opt := hass.data.pop(_DHW, None)) is not None:
+        opt.stop()
     if hass.data.pop(_DATA, None) is None:
         return
     try:
