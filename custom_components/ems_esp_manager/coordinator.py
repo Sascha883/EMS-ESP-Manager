@@ -50,6 +50,14 @@ class EmsEspRuntime:
     bus_id: int | None = None   # EMS-ESP's own bus id (settings ems_bus_id), 0x49 since 3.8.2
     tx_mode: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    # callbacks for new bus-log lines – only the entities that show the log, so a
+    # busy bus does not make every entity of the integration recalculate each second
+    log_listeners: list[Any] = field(default_factory=list)
+
+    def notify_log(self) -> None:
+        """New log line(s) or log connection state changed."""
+        for listener in list(self.log_listeners):
+            listener()
 
 
 type EmsEspConfigEntry = ConfigEntry[EmsEspRuntime]

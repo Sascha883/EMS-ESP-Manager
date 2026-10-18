@@ -15,6 +15,10 @@ from .buslog import URL_LOG_CARD
 from .mqtt import URL_MQTT_CARD
 from .const import DOMAIN, URL_PANEL, URL_PANEL_ADMIN
 from .names import STATES, lang
+from .registry import all_devices, all_entities
+
+# kept for older imports / tests
+_registry_devices = all_devices
 
 CONTROL_DOMAINS = ("climate", "water_heater", "number", "select", "switch", "text", "time", "button")
 VALUE_DOMAINS = ("sensor", "binary_sensor")
@@ -113,6 +117,8 @@ TXT = {
 }
 
 
+
+
 def _dev_name(device: dr.DeviceEntry | None) -> str:
     if device is None:
         return ""
@@ -161,7 +167,7 @@ def build_dashboard(hass: HomeAssistant) -> dict[str, Any]:
             and hass.states.get(entry.entity_id) is not None
         )
 
-    entries = [e for e in ent_reg.entities.values() if visible(e)]
+    entries = [e for e in all_entities(ent_reg) if visible(e)]
 
     # ------------------------------------------------ own entities
     own = [e for e in entries if e.platform == DOMAIN]
@@ -190,15 +196,16 @@ def build_dashboard(hass: HomeAssistant) -> dict[str, Any]:
 
     # ------------------------------------------------ EMS devices from MQTT
     mqtt_device_ids = {e.device_id for e in entries if e.platform == "mqtt" and e.device_id}
+    devices = all_devices(dev_reg)
     mains = [
         d
-        for d in dev_reg.devices.values()
+        for d in devices
         if d.manufacturer == "EMS-ESP" and d.via_device_id is None and d.id in mqtt_device_ids
     ]
     main_ids = {d.id for d in mains}
     ems_devices = [
         d
-        for d in dev_reg.devices.values()
+        for d in devices
         if d.id in mqtt_device_ids and (d.id in main_ids or d.via_device_id in main_ids)
     ]
     ems_devices.sort(key=lambda d: (d.id in main_ids, _dev_name(d).lower()))

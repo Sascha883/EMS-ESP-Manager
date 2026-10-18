@@ -57,7 +57,8 @@ def _f(v: Any) -> float | None:
 
 
 def _hm(h: float) -> str:
-    return f"{int(h):02d}:{int(round((h % 1) * 60)):02d}"
+    hh, mm = divmod(int(round(h * 60)), 60)  # 11.999 -> 12:00, not 11:60
+    return f"{hh:02d}:{mm:02d}"
 
 
 class DhwOptimizer:
@@ -171,10 +172,25 @@ class DhwOptimizer:
         if stop is None:
             st["last"] = "Stopptemperatur-Entität fehlt – nicht gestartet"
             return
-        st["prev"] = {"mode": mode.state if mode else None, "stop": _f(stop.state)}
-        if mode and cfg["comfort_option"] and mode.state != cfg["comfort_option"]:
-            await self._set("select", cfg["mode_entity"], cfg["comfort_option"])
-        await self._set("number", cfg["stop_entity"], cfg["target"])
+        prev = {"mode": mode.state if mode else None, "stop": _f(stop.state)}
+        mode_changed = False
+        try:
+            if mode and cfg["comfort_option"] and mode.state != cfg["comfort_option"]:
+                await self._set("select", cfg["mode_entity"], cfg["comfort_option"])
+                mode_changed = True
+            await self._set("number", cfg["stop_entity"], cfg["target"])
+        except Exception as err:  # noqa: BLE001
+            # half done (mode switched, temperature not): put the mode back at once,
+            # otherwise "Komfort" would stay and be taken as the previous mode next time
+            if mode_changed and prev["mode"]:
+                try:
+                    await self._set("select", cfg["mode_entity"], prev["mode"])
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning("Warmwasseroptimierung: Betriebsart nicht zurückgesetzt", exc_info=True)
+            st["last"] = f"Start fehlgeschlagen {dt_util.now().strftime('%H:%M')}: {err}"
+            _LOGGER.warning("Warmwasseroptimierung: Start fehlgeschlagen: %s", err)
+            return
+        st["prev"] = prev
         st.update(active=True, since=dt_util.now().isoformat(),
                   last=f"Gestartet {dt_util.now().strftime('%H:%M')}: {why}")
         _LOGGER.info("Warmwasseroptimierung gestartet (%s)", why)
@@ -183,10 +199,20 @@ class DhwOptimizer:
         st = self.st
         prev = st.get("prev") or {}
         cfg = self.cfg
+        # entity temporarily unavailable (EMS-ESP restart, MQTT gone): keep the
+        # optimisation "active" and try again at the next check – never drop the
+        # previous values, the tank would otherwise stay at the high temperature
+        missing = [
+            e for e, key in ((cfg["stop_entity"], "stop"), (cfg["mode_entity"], "mode"))
+            if prev.get(key) is not None and not self._state(e)
+        ]
+        if missing:
+            st["last"] = f"Zurückschreiben wartet ({why}): {', '.join(missing)} nicht verfügbar"
+            return
         try:
-            if prev.get("stop") is not None and self._state(cfg["stop_entity"]):
+            if prev.get("stop") is not None:
                 await self._set("number", cfg["stop_entity"], prev["stop"])
-            if prev.get("mode") and self._state(cfg["mode_entity"]):
+            if prev.get("mode"):
                 await self._set("select", cfg["mode_entity"], prev["mode"])
         except Exception as err:  # noqa: BLE001
             st["last"] = f"Zurückschreiben fehlgeschlagen: {err}"

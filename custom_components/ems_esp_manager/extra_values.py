@@ -25,7 +25,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 from .api import EmsEspError
 from .coordinator import EmsEspConfigEntry
 from .entity import EmsEspEntity
-from .entity_map import EMS_DEVICES, _flatten
+from .entity_map import EMS_DEVICES
 
 _LOGGER = logging.getLogger(__name__)
 

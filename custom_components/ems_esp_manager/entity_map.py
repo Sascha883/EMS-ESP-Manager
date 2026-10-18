@@ -28,6 +28,8 @@ from pathlib import Path
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .registry import all_entities
+
 _LOGGER = logging.getLogger(__name__)
 
 DEVICES = (
@@ -41,18 +43,22 @@ _RE_TAG = re.compile(r"^(hc\d+|dhw\d*|wwc\d+|ahs\d+|hs\d+|src\d+)_(.+)$")
 # boiler/thermostat dhw entities in the 3.6 compatible formats ("ww" prefix or suffix)
 _DHW_OLD_SUFFIX = ("nrg", "uptimecomp", "nrgconscomp", "auxelecheatnrgcons", "nrgsupp", "altopprio", "hpcircpump")
 
-_LONG: dict[str, list[str]] | None = None
+def _load_long_names() -> dict[str, list[str]]:
+    """Blocking: read ems_longnames.json (English long name -> EMS-ESP short names)."""
+    try:
+        return json.loads((Path(__file__).parent / "ems_longnames.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        _LOGGER.warning("ems_longnames.json missing – long entity names cannot be mapped")
+        return {}
+
+
+# read once at import time – Home Assistant imports custom integrations in the
+# executor, so this never blocks the event loop (HA "Detected blocking call")
+_LONG: dict[str, list[str]] = _load_long_names()
 
 
 def _long_names() -> dict[str, list[str]]:
     """English long name (as used in the unique_id) -> EMS-ESP short names."""
-    global _LONG  # noqa: PLW0603
-    if _LONG is None:
-        try:
-            _LONG = json.loads((Path(__file__).parent / "ems_longnames.json").read_text("utf-8"))
-        except (OSError, ValueError):
-            _LOGGER.warning("ems_longnames.json missing – long entity names cannot be mapped")
-            _LONG = {}
     return _LONG
 
 
@@ -85,7 +91,7 @@ def build_auto_map(hass: HomeAssistant) -> dict[str, str]:
     reg = er.async_get(hass)
     found: dict[str, str] = {}
     exact: set[str] = set()
-    for ent in reg.entities.values():
+    for ent in all_entities(reg):
         if ent.platform != "mqtt" or not ent.unique_id or ent.disabled_by:
             continue
         # leftovers of an earlier entity format stay "unavailable" – never map to them
@@ -110,7 +116,8 @@ def build_auto_map(hass: HomeAssistant) -> dict[str, str]:
 # Lets the panel tell "not delivered by this system" apart from "missing in HA".
 _TAG_KEY = re.compile(r"^(hc\d+|dhw\d*|ahs\d+|hs\d+|src\d+|wwc\d+)$")
 EMS_DEVICES = ("boiler", "thermostat", "mixer", "solar", "heatpump", "water")
-_CACHE: dict[str, object] = {"t": 0.0, "ids": None}
+_CACHE: dict[str, object] = {"t": 0.0, "ids": None, "fail": 0.0}
+_FAIL_RETRY = 60  # s – gateway unreachable: do not ask again on every panel request
 
 
 def _flatten(device: str, data: dict) -> set[str]:
@@ -127,21 +134,26 @@ async def ems_value_ids(api) -> list[str] | None:
     """Object ids (device[_tag]_short) of all values EMS-ESP currently has; None = unknown."""
     import time
 
-    if _CACHE["ids"] is not None and time.monotonic() - float(_CACHE["t"]) < 60:
+    now = time.monotonic()
+    if _CACHE["ids"] is not None and now - float(_CACHE["t"]) < 60:
         return _CACHE["ids"]  # type: ignore[return-value]
+    if now - float(_CACHE["fail"]) < _FAIL_RETRY:
+        return _CACHE["ids"]  # type: ignore[return-value]  # last known list (or None)
     ids: set[str] = set()
     ok = False
     for dev in EMS_DEVICES:
         for path in (f"/api/{dev}/values", f"/api/{dev}"):
             try:
                 status, data = await api._request("GET", path)  # noqa: SLF001
-            except Exception:  # noqa: BLE001
-                status, data = 0, None
+            except Exception:  # noqa: BLE001 - gateway not reachable: stop, do not wait 12 × 15 s
+                _CACHE["fail"] = time.monotonic()
+                return _CACHE["ids"]  # type: ignore[return-value]
             if status == 200 and isinstance(data, dict) and data and "message" not in data:
                 ids |= _flatten(dev, data)
                 ok = True
                 break
     if not ok:
+        _CACHE["fail"] = time.monotonic()
         return None
     _CACHE.update(t=time.monotonic(), ids=sorted(ids))
     return _CACHE["ids"]  # type: ignore[return-value]
@@ -157,8 +169,8 @@ async def ems_entities(api) -> dict[str, dict] | None:
     for dev in EMS_DEVICES:
         try:
             status, data = await api._request("GET", f"/api/{dev}/entities")  # noqa: SLF001
-        except Exception:  # noqa: BLE001
-            continue
+        except Exception:  # noqa: BLE001 - gateway not reachable: no need to try the other devices
+            break
         if status != 200 or not isinstance(data, dict) or "message" in data:
             continue
         ok = True
@@ -220,7 +232,7 @@ def ems_ha_entities(hass: HomeAssistant, disabled: bool = False) -> list[str]:
     reg = er.async_get(hass)
     return sorted(
         ent.entity_id
-        for ent in reg.entities.values()
+        for ent in all_entities(reg)
         if ent.platform == "mqtt" and ent.unique_id and bool(ent.disabled_by) == disabled
         and _RE_DEV.search(str(ent.unique_id).lower())
     )
