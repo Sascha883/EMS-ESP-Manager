@@ -196,6 +196,13 @@ body.mapx #mapx{display:block}
 .vroll .ud div{width:44px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .vroll .unit{font-size:15px;color:var(--dim);position:absolute;bottom:-4px;left:0;right:0;text-align:center}
 .edhint{position:absolute;left:66px;right:66px;top:400px;border-top:1px solid var(--line);padding:16px 20px;font-size:15px;color:var(--dim);display:flex;justify-content:space-between}
+/* Übersicht Kältekreislauf (Service → Diagnose) */
+.rk{position:absolute;top:84px;left:66px;right:66px;height:312px;display:flex;align-items:center;justify-content:center}
+.rk svg{width:100%;height:100%}
+.rtabs{justify-content:center!important;gap:46px}
+.rtabs span{padding:2px 2px 4px}
+.rtabs span.on{color:var(--acc);border-bottom:2px solid var(--acc)}
+.portrait .rk{top:calc(76px + var(--st));left:4px;right:4px;bottom:calc(80px + var(--sb));height:auto}
 /* Systemübersicht */
 .so{position:absolute;top:96px;left:66px;right:66px;height:300px}
 .so .info{position:absolute;left:20px;top:10px;font-size:19px;color:#eee}
@@ -317,7 +324,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.11.21";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.11.22";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -944,6 +951,7 @@ const MENUS = {
     TXT('Das Estrichtrocknungsprogramm wird am Bedienfeld eingestellt – EMS-ESP liefert nur Status und Temperatur.'),
   ]},
   s_diag: { title:'Diagnose', svc:true, items:[
+    NAV('Übersicht Kältekreislauf','refrig'),
     NAV('Funktionstests','s_test'),
     NAV('Monitorwerte','s_mon'),
     NAV('Störungen','faults'),
@@ -1056,7 +1064,7 @@ const DEMO = {
   'sensor.boiler_hpcurrpower':1180,'sensor.boiler_hppower':4.6,'sensor.boiler_hptc0':29.6,'sensor.boiler_hptc1':34.9,'sensor.boiler_hptc3':35.8,
   'sensor.boiler_hptl2':8.7,'sensor.boiler_hpcircspd':62,'sensor.boiler_fanspd':54,'sensor.boiler_syspress':1.6,'sensor.boiler_pc0flow':1210,
   'sensor.boiler_hptr1':61,'sensor.boiler_hptr3':32.1,'sensor.boiler_hptr4':2.4,'sensor.boiler_hptr5':4.9,'sensor.boiler_hptr6':68.3,'sensor.boiler_hptr7':66.1,
-  'sensor.boiler_hppl1':1.8,'sensor.boiler_hpph1':38.5,'sensor.boiler_hpta4':5.2,'sensor.boiler_expvalve':38,'sensor.boiler_heatingpumpmod':62,
+  'sensor.boiler_hppl1':1.8,'sensor.boiler_hpph1':38.5,'sensor.boiler_hpta4':5.2,'sensor.boiler_expvalve':38,'sensor.boiler_recvalve':21,'sensor.boiler_heatingpumpmod':62,
   'sensor.boiler_uptimetotal':1261440,'sensor.boiler_uptimecontrol':842000,'sensor.boiler_uptimecompheating':512300,'sensor.boiler_dhw_uptimecomp':98200,'sensor.boiler_uptimecompcooling':4100,
   'sensor.boiler_totalcompstarts':4213,'sensor.boiler_heatingstarts':2980,'sensor.boiler_dhw_startshp':1190,'sensor.boiler_coolingstarts':43,
   'sensor.boiler_nrgconstotal':6490,'sensor.boiler_nrgconscomptotal':6310,'sensor.boiler_nrgconscompheating':5020,'sensor.boiler_dhw_nrgconscomp':1210,'sensor.boiler_nrgconscompcooling':80,
@@ -1220,7 +1228,7 @@ function render(){
   ACT=[]; const t=top_(); let h='';
   const V = {home:vHome, menu:()=>vMenu(t.id), edit:()=>vEdit(t), ledit:()=>vLEdit(t), hc:()=>vHC(t.n), dhwp:vDHW, extra:()=>vExtra(t),
     ov:vOverview, energy:()=>vEnergy(t), absent:vAbsent, vac:vVac, curve:()=>vCurve(t.n), outdoor:()=>vOutdoor(t), dhwhist:()=>vDhwHist(t), conn:()=>vConn(t),
-    contact:vContact, panel:vPanel, map:()=>vMap(t), mapgrp:()=>vMapGroup(t), mapedit:()=>vMapEdit(t), sched:()=>vSched(t), schededit:()=>vSchedEdit(t), pin:()=>vPin(t), io:()=>vIO(t), rename:()=>vRename(t)};
+    contact:vContact, panel:vPanel, map:()=>vMap(t), mapgrp:()=>vMapGroup(t), mapedit:()=>vMapEdit(t), sched:()=>vSched(t), schededit:()=>vSchedEdit(t), pin:()=>vPin(t), io:()=>vIO(t), rename:()=>vRename(t), refrig:()=>vRefrig(t)};
   h = (V[t.type]||(()=>header('?')))();
   const oldBody = document.querySelector('#root .body');
   if(oldBody && render._last) render._last.scroll = oldBody.scrollTop;
@@ -1672,6 +1680,7 @@ function openNav(it){
   if(to==='saver') return push({type:'ledit',title:'Display aus nach',kind:'sel',v:settings.saver,opts:[[0,'Nie'],[1,'1 min'],[5,'5 min'],[10,'10 min'],[30,'30 min']],save:v=>{settings.saver=v;saveSettings();}});
   if(/^curve\d$/.test(to)) return push({type:'curve',n:+to.slice(5),svc});
   if(['conn','contact','panel','dhwhist'].includes(to)) return push({type:to});
+  if(to==='refrig') return push({type:'refrig',tab:0,svc:true});
   push({type:'menu',id:to,svc:svc||MENUS[to]&&MENUS[to].svc});
 }
 function vMenu(id){
@@ -1802,6 +1811,77 @@ function vExtra(t){
   return header('Extra-Warmwasser') + rollHtml(t,t.fmt,act?'Extra-Warmwasser läuft':'Dauer') +
    `<div class="btns"><div class="btn" data-a="${a(()=>{setSwitch(cId,false);toast('Extra-WW gestoppt');})}">Stopp Extra-WW</div>
      <div class="btn pri" data-a="${a(async()=>{ if(has(dId) && t.v!==nv(dId)) await setNumber(dId,t.v); setSwitch(cId,true); toast('Extra-WW gestartet'); })}">Start Extra-WW</div></div>`;
+}
+/* ---------- Übersicht Kältekreislauf (Service → Diagnose) – Bosch „Refrigerant circ overview“ ----------
+   Werte/Bezeichnungen wie am Original. JR0/JR1 = Druckfühler (EMS-ESP liefert die Sättigungstemperatur PL1/PH1).
+   TR9 (Verdampferaustritt) liefert EMS-ESP nicht. */
+const RK_PTS = [
+  // [x, y, Bezeichnung, Entität, Format]
+  [223,242,'TL2',  B('hptl2'),'t'],
+  [223,420,'PL3',  B('fanspd'),'p'],
+  [500,255,'TR9',  null,'t'],
+  [578,335,'JR0',  B('hppl1'),'t'],
+  [670,255,'TR5',  B('hptr5'),'t'],
+  [803,255,'TR6',  B('hptr6'),'t'],
+  [793,380,'JR1',  B('hpph1'),'t'],
+  [803,450,'TR3',  B('hptr3'),'t'],
+  [371,463,'TR4',  B('hptr4'),'t'],
+  [958,242,'TC3',  B('hptc3'),'t'],
+  [958,415,'PC0',  B('hpcircspd'),'p'],
+  [958,485,'TC0',  B('hptc0'),'t'],
+  [431,552,'VR1',  B('expvalve'),'p'],
+  [736,552,'VR0',  B('recvalve'),'p'],
+];
+[['hptl2','TL2 Lufteintritt'],['fanspd','PL3 Ventilator'],['hppl1','JR0 Niederdruck (Temp.)'],['hptr5','TR5 Sauggas'],['hptr6','TR6 Heißgas'],
+ ['hpph1','JR1 Hochdruck (Temp.)'],['hptr3','TR3 Kältemittel flüssig'],['hptr4','TR4 Verdampfereintritt'],['hptc3','TC3 Kondensator'],
+ ['hpcircspd','PC0 Heizungspumpe'],['hptc0','TC0 Rücklauf WP'],['expvalve','Expansionsventil VR1'],['recvalve','Receiver-Ventil VR0'],
+ ['hpcompspd','ER1 Kompressordrehzahl'],['hptr1','TR1 Kompressor']].forEach(([k,l])=>use(B(k),'ro',{label:l}));
+function vRefrig(t){
+  const des = t.tab===1, fs = PORTRAIT?36:25;
+  const val=(id,f)=>{ if(!id) return '–'; const v=nv(id); return v==null?'–':fmtN(v,0)+(f==='p'?'%':'°C'); };
+  const R_='#e2001a', BL='#2a8fd6', W='#fff';
+  const txt=(x,y,s,anchor)=>`<text x="${x}" y="${y}" fill="${W}" font-size="${fs}" text-anchor="${anchor||'middle'}" dominant-baseline="middle">${esc(s)}</text>`;
+  const chev=(x,y,dir,col)=>dir==='r'?`<path d="M${x-8} ${y-9} L${x+2} ${y} L${x-8} ${y+9}" stroke="${col}" stroke-width="3" fill="none"/>`
+    : dir==='l'?`<path d="M${x+8} ${y-9} L${x-2} ${y} L${x+8} ${y+9}" stroke="${col}" stroke-width="3" fill="none"/>`:'';
+  const hx=(cx,cy)=>`<rect x="${cx-19}" y="${cy-33}" width="38" height="66" fill="#000" stroke="${W}" stroke-width="2.5"/><path d="M${cx-19} ${cy+33} L${cx+19} ${cy-33}" stroke="${W}" stroke-width="2"/>`;
+  const valve=(cx,cy)=>`<path d="M${cx-26} ${cy-15} L${cx+26} ${cy+15} L${cx+26} ${cy-15} L${cx-26} ${cy+15} Z" fill="#000" stroke="${W}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  const comp=(cx,cy)=>`<circle cx="${cx}" cy="${cy}" r="27" fill="#000" stroke="${W}" stroke-width="2.5"/><path d="M${cx-22} ${cy-15} L${cx+26} ${cy-5} M${cx-22} ${cy+15} L${cx+26} ${cy+5}" stroke="${W}" stroke-width="2.5"/>`;
+  const fan=(cx,cy)=>`<circle cx="${cx}" cy="${cy}" r="27" fill="none" stroke="${W}" stroke-width="2.5"/>`+
+    [0,120,240].map(r=>`<ellipse cx="${cx}" cy="${cy-10}" rx="6" ry="10" fill="none" stroke="${W}" stroke-width="2" transform="rotate(${r} ${cx} ${cy})"/>`).join('')+`<circle cx="${cx}" cy="${cy}" r="3" fill="${W}"/>`;
+  const pump=(cx,cy)=>`<circle cx="${cx}" cy="${cy}" r="25" fill="none" stroke="${W}" stroke-width="2.5"/><path d="M${cx-12} ${cy-21} L${cx+24} ${cy} L${cx-12} ${cy+21}" fill="none" stroke="${W}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  const P=(d,col)=>`<path d="${d}" stroke="${col}" stroke-width="3" fill="none" stroke-linejoin="round"/>`;
+  const labels = RK_PTS.map(([x,y,l,id,f])=>txt(x,y,des?l:val(id,f))).join('')
+    + txt(736,167, des?'ER1  |  TR1':`${val(B('hpcompspd'),'p')}  |  ${val(B('hptr1'),'t')}`);
+  const svg = `<svg viewBox="100 140 965 432" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <linearGradient id="rkLr" gradientUnits="userSpaceOnUse" x1="100" x2="260" y1="0" y2="0"><stop offset="0" stop-color="${R_}" stop-opacity="0"/><stop offset="1" stop-color="${R_}"/></linearGradient>
+      <linearGradient id="rkLb" gradientUnits="userSpaceOnUse" x1="100" x2="260" y1="0" y2="0"><stop offset="0" stop-color="${BL}" stop-opacity="0"/><stop offset="1" stop-color="${BL}"/></linearGradient>
+      <linearGradient id="rkRr" gradientUnits="userSpaceOnUse" x1="900" x2="1065" y1="0" y2="0"><stop offset="0" stop-color="${R_}"/><stop offset="1" stop-color="${R_}" stop-opacity="0"/></linearGradient>
+      <linearGradient id="rkRb" gradientUnits="userSpaceOnUse" x1="900" x2="1065" y1="0" y2="0"><stop offset="0" stop-color="${BL}"/><stop offset="1" stop-color="${BL}" stop-opacity="0"/></linearGradient>
+    </defs>
+    <!-- Luft (Außeneinheit) -->
+    ${P('M100 262 L286 262 Q300 262 300 276 L300 340','url(#rkLr)')}${chev(268,262,'r',R_)}
+    ${P('M300 400 L300 444 Q300 458 286 458 L100 458','url(#rkLb)')}${chev(252,458,'l',BL)}
+    <!-- Heizwasser -->
+    ${P('M862 340 L862 276 Q862 262 876 262 L1065 262','url(#rkRr)')}${chev(916,262,'r',R_)}
+    ${P('M1065 458 L876 458 Q862 458 862 444 L862 400','url(#rkRb)')}${chev(904,458,'l',BL)}
+    <!-- Kältekreis: Niederdruck blau, Hochdruck rot -->
+    ${P('M407 512 L342 512 Q328 512 328 498 L328 226 Q328 212 342 212 L529 212 Q543 212 543 226 L543 348 Q543 364 562 364 L570 364',BL)}${chev(497,212,'r',BL)}
+    ${P('M602 364 L612 364 Q628 364 628 348 L628 226 Q628 212 642 212 L710 212',BL)}
+    ${P('M762 212 L824 212 Q838 212 838 226 L838 340',R_)}
+    ${P('M838 400 L838 498 Q838 512 824 512 L762 512',R_)}
+    ${P('M712 512 L644 512 Q630 512 630 498 L630 394 Q630 378 612 378 L602 378',R_)}${chev(666,512,'l',R_)}
+    ${P('M570 378 L560 378 Q543 378 543 394 L543 498 Q543 512 529 512 L459 512',R_)}
+    <rect x="567" y="360" width="38" height="22" fill="#000" stroke="${W}" stroke-width="2.5"/><path d="M567 382 L605 360" stroke="${W}" stroke-width="2"/>
+    ${hx(313,370)}${hx(854,370)}
+    ${valve(433,512)}${valve(737,512)}
+    ${comp(736,212)}${fan(229,353)}${pump(951,353)}
+    ${labels}
+  </svg>`;
+  const tab=(i,l)=>`<span class="${t.tab===i?'on':''}" data-a="${a(()=>{t.tab=i;render();})}">${l}</span>`;
+  return header('Übersicht Kältekreislauf',{svc:true})+`<div class="rk">${svg}</div>
+   <div class="bline"></div>
+   <div class="bar rtabs">${tab(0,'Werte')}${tab(1,'Bezeichnungen')}</div>`;
 }
 /* ---------- Systemübersicht (Bosch-Schema) ---------- */
 function vOverview(){
@@ -2273,6 +2353,7 @@ const HELP = {
   edit:'Wert mit ˄ / ˅, Mausrad oder Wischen auf der Zahl einstellen. Beim Zurückgehen wird der Wert an die Wärmepumpe gesendet.',
   ov:'Links Außentemperatur (antippen = Verlauf gestern/heute) und Betriebsdruck. Rechts Vor-/Rücklauf der Außeneinheit, Heizkreis und Warmwasser.',
   outdoor:'Verlauf der Außentemperatur aus der Home-Assistant-Historie.',
+  refrig:'Kältekreis im Heizbetrieb. „Werte“ zeigt die aktuellen Messwerte aus EMS-ESP, „Bezeichnungen“ die Bosch-Fühler- und Bauteilnamen. Links Außeneinheit mit Verdampfer (TL2 Lufteintritt, PL3 Ventilator), Mitte Zwischenwärmetauscher (JR0 Niederdruck), oben Kompressor (ER1 Drehzahl, TR1 Temperatur), rechts Kondensator (JR1 Hochdruck) mit Heizwasser TC3/TC0 und Pumpe PC0, unten Expansionsventile VR1/VR0. TR9 liefert EMS-ESP nicht (–).',
   dhwhist:'Ist- und Solltemperatur Warmwasser von heute (0–24 Uhr) aus der Home-Assistant-Historie. Orange = Ist, blau gestrichelt = Soll.',
 };
 function showHelp(){
