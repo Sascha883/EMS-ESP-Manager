@@ -71,6 +71,26 @@ def _bus_state(data: dict[str, Any]) -> str | None:
     return BUS_STATES[int(code)] if int(code) < len(BUS_STATES) else None
 
 
+# /rest/systemStatus "network_status": 10 = Ethernet connected (EMS-ESP custom code),
+# otherwise the WiFi.status() code of the ESP32 (3 = WL_CONNECTED)
+NETWORK_ETHERNET = 10
+
+
+def network_type(data: dict[str, Any]) -> str | None:
+    """'lan' or 'wifi' – how the gateway is connected; None = unknown."""
+    code = data.get("network_status")
+    if code is not None:
+        try:
+            return "lan" if int(code) == NETWORK_ETHERNET else "wifi"
+        except (TypeError, ValueError):
+            return None
+    # older firmware without network_status: Ethernet reports RSSI 0
+    rssi = data.get("wifi_rssi")
+    if isinstance(rssi, (int, float)):
+        return "wifi" if rssi else "lan"
+    return None
+
+
 def _progress(rt: EmsEspRuntime) -> int | None:
     code = int((rt.status.data or {}).get("status") or 0)
     if code >= STATUS_UPLOADING:
@@ -160,12 +180,19 @@ SENSORS: tuple[EmsEspSensorDescription, ...] = (
         },
     ),
     EmsEspSensorDescription(
+        key="network",
+        icon="mdi:lan",
+        value_fn=lambda rt: STATES[rt.language].get(network_type(rt.status.data) or "", None),
+    ),
+    EmsEspSensorDescription(
         key="wifi_rssi",
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda rt: rt.status.data.get("wifi_rssi") or None,
+        # on LAN there is no Wi-Fi signal (EMS-ESP sends 0) -> no value
+        value_fn=lambda rt: (rt.status.data.get("wifi_rssi") or None)
+        if network_type(rt.status.data) != "lan" else None,
     ),
     EmsEspSensorDescription(
         key="uptime",
@@ -231,6 +258,13 @@ class EmsEspSensor(EmsEspEntity, CoordinatorEntity, SensorEntity):
         if self.entity_description.key in ("update_progress", "bus_log"):
             return True
         return self._runtime.status.last_update_success
+
+    @property
+    def icon(self) -> str | None:
+        if self.entity_description.key == "network":
+            kind = network_type(self._runtime.status.data or {})
+            return {"lan": "mdi:ethernet", "wifi": "mdi:wifi"}.get(kind or "", "mdi:lan")
+        return super().icon
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

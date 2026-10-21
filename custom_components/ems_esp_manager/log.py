@@ -22,12 +22,33 @@ MAX_LINES = 60            # shown in the dashboard (sensor attribute)
 MAX_DOWNLOAD = 20000      # kept in memory for the download (~2 MB)
 RECONNECT_SECONDS = 10
 STALL_SECONDS = 45         # no line for this long -> check whether the gateway restarted
-MAX_SILENT_SECONDS = 300   # reconnect anyway after this long without a single line
+# reconnect anyway after this long without a single line. A quiet bus (log level
+# "warning", no capture) is normal and the stall check below already detects a
+# restarted / unreachable gateway – reconnecting every 5 min only made EMS-ESP
+# replay its whole log buffer again (log 19.10.2026: 6 replays in one hour)
+MAX_SILENT_SECONDS = 1800
 SEEN_KEYS = 5000           # EMS-ESP replays its log buffer on every connect -> skip known lines
 TX_MODES = {0: "aus (nur lesen)", 1: "EMS", 2: "EMS+", 3: "HT3", 4: "Hardware", 5: "Auto"}
 
 _RE_ME = re.compile(r"\bme\(0x([0-9A-Fa-f]{2})\)")
 _RE_UPTIME = re.compile(r"(?:(\d+)\D)?(\d+):(\d+):(\d+)")
+_RE_ESP_TIME = re.compile(r"(?:(\d{4})-(\d\d)-(\d\d)T|(\d+)\+)?(\d+):(\d+):(\d+)(?:\.(\d+))?")
+
+
+def _esp_seconds(value: str) -> float | None:
+    """EMS-ESP log time ('2026-10-16T12:44:10.125' or uptime '000+01:02:03.456') as seconds."""
+    m = _RE_ESP_TIME.fullmatch(value.strip()) if value else None
+    if not m:
+        return None
+    y, mo, d, days, h, mi, sec, frac = m.groups()
+    t = int(h) * 3600 + int(mi) * 60 + int(sec) + (float("0." + frac) if frac else 0.0)
+    if y:
+        from datetime import date
+
+        t += date(int(y), int(mo), int(d)).toordinal() * 86400
+    elif days:
+        t += int(days) * 86400
+    return t
 
 
 def _uptime_seconds(value) -> float | None:
@@ -57,6 +78,27 @@ def _is_telegram(text: str) -> bool:
     return "->" in t and ("data:" in t or "(0x" in t)
 
 
+
+def _device_lines(devices: list[dict] | None) -> list[str]:
+    """Header lines: manager version + detected EMS devices with software version."""
+    from .const import MANAGER_VERSION
+
+    out = [f"# EMS-ESP Manager v{MANAGER_VERSION}"]
+    if devices is None:
+        return out + ["# Geräte: nicht abrufbar (EMS-ESP /api/system/info)"]
+    if not devices:
+        return out + ["# Geräte: keine erkannt"]
+    out.append("# Geräte (Typ | Bus-ID | Produkt-ID | Software | Marke | Name):")
+    for d in devices:
+        dev_id = str(d.get("deviceID") or "?")
+        if dev_id != "?" and not dev_id.lower().startswith("0x"):
+            dev_id = "0x" + dev_id.upper().zfill(2)
+        out.append(
+            f"#   {d.get('type') or '?'} | {dev_id} | {d.get('productID', '?')} | "
+            f"{d.get('version') or '?'} | {d.get('brand') or '-'} | {d.get('name') or ''}"
+        )
+    return out
+
 class EmsEspLog:
     """Keeps the last log lines of one gateway."""
 
@@ -76,6 +118,7 @@ class EmsEspLog:
         self._uptime: float | None = None
         self._seen: deque[tuple[str, str]] = deque(maxlen=SEEN_KEYS)
         self._seen_set: set[tuple[str, str]] = set()
+        self._seen_t: dict[str, list[float]] = {}   # text -> EMS-ESP times seen (replay check)
         self._quiet = False        # last disconnect was only a silence timeout
         self._task: asyncio.Task | None = None
         self._notify_handle: asyncio.TimerHandle | None = None
@@ -118,8 +161,13 @@ class EmsEspLog:
         _LOGGER.info("EMS-ESP log: %s", text)
         self._on_update()
 
-    def export(self, telegrams_only: bool = False) -> str:
-        """Text file for the download (one line per log entry)."""
+    def export(self, telegrams_only: bool = False, devices: list[dict] | None = None) -> str:
+        """Text file for the download (one line per log entry).
+
+        ``devices``: EMS devices from /api/system/info (type, name, deviceID,
+        productID, brand, version) – written into the header, so every log
+        shows which units and software versions it comes from.
+        """
         rows = [
             f"{ha_time} | {esp_time} | {level} | {text}"
             for ha_time, esp_time, level, text in self.history
@@ -129,8 +177,9 @@ class EmsEspLog:
             "# EMS-ESP Bus-Log – exportiert aus Home Assistant (EMS-ESP Manager)",
             f"# Zeilen: {len(rows)}" + (" (nur Telegramme)" if telegrams_only else "")
             + f", Speicher max. {MAX_DOWNLOAD} Zeilen",
-            "# HA-Zeit | EMS-ESP-Zeit | Level | Meldung",
         ]
+        head += _device_lines(devices)
+        head.append("# HA-Zeit | EMS-ESP-Zeit | Level | Meldung")
         return "\n".join(head + rows) + "\n"
 
     @property
@@ -152,13 +201,8 @@ class EmsEspLog:
             self.me_id = int(m.group(1), 16)
         esp_time = str(event.get("t", ""))
         # EMS-ESP sends its whole log buffer again after every (re)connect
-        key = (esp_time, text)
-        if esp_time and key in self._seen_set:
+        if esp_time and self._is_replay(esp_time, text):
             return False
-        if len(self._seen) == self._seen.maxlen:
-            self._seen_set.discard(self._seen[0])
-        self._seen.append(key)
-        self._seen_set.add(key)
         level = LEVEL_CHAR.get(int(event.get("l", 6)), "?")
         now = dt_util.now()
         ha_time = now.strftime("%Y-%m-%d %H:%M:%S.") + f"{now.microsecond // 1000:03d}"
@@ -180,6 +224,37 @@ class EmsEspLog:
         self.lines.append(f"{short} {level} {text}")
         self._schedule_notify()
         return "Restarting" in text or "restarting" in text
+
+    def _is_replay(self, esp_time: str, text: str) -> bool:
+        """True if this line was already stored (EMS-ESP replays its buffer on connect).
+
+        The replayed lines carry the same text, but their time stamp is often
+        shifted by exactly one second (log 19.10.2026: 14:12:20.122 -> 14:12:19.122),
+        so an exact comparison let them through as new lines. Lines that are
+        really repeated (e.g. two failed commands 160 ms apart) are kept.
+        """
+        key = (esp_time, text)
+        if key in self._seen_set:
+            return True
+        t = _esp_seconds(esp_time)
+        times = self._seen_t.get(text)
+        if t is not None and times and any(abs(abs(t - x) - 1.0) < 0.02 for x in times):
+            return True
+        if len(self._seen) == self._seen.maxlen:
+            old_time, old_text = self._seen[0]
+            self._seen_set.discard((old_time, old_text))
+            old_t = _esp_seconds(old_time)
+            lst = self._seen_t.get(old_text)
+            if lst is not None:
+                if old_t in lst:
+                    lst.remove(old_t)
+                if not lst:
+                    del self._seen_t[old_text]
+        self._seen.append(key)
+        self._seen_set.add(key)
+        if t is not None:
+            self._seen_t.setdefault(text, []).append(t)
+        return False
 
     def _schedule_notify(self) -> None:
         """Update entities at most once per second (the bus can be busy)."""

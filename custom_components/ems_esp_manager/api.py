@@ -207,6 +207,32 @@ class EmsEspApi:
             raise EmsEspError(f"settings returned HTTP {status}")
         return data if isinstance(data, dict) else current
 
+    async def get_network_status(self) -> dict[str, Any]:
+        """GET /rest/networkStatus – the gateway's own local_ip and mac_address."""
+        status, data = await self._request("GET", "/rest/networkStatus")
+        if status != 200 or not isinstance(data, dict):
+            raise EmsEspError(f"networkStatus returned HTTP {status}")
+        return data
+
+    async def get_sensor_data(self) -> dict[str, Any]:
+        """GET /rest/sensorData – temperature sensors ("ts") and analog sensors ("as")."""
+        status, data = await self._request("GET", "/rest/sensorData")
+        if status != 200 or not isinstance(data, dict):
+            raise EmsEspError(f"sensorData returned HTTP {status}")
+        return data
+
+    async def write_analog_sensor(self, sensor: dict[str, Any]) -> None:
+        """POST /rest/writeAnalogSensor – create or change an analog sensor (key = gpio)."""
+        status, _ = await self._request("POST", "/rest/writeAnalogSensor", sensor)
+        if status != 200:
+            raise EmsEspError(f"writeAnalogSensor returned HTTP {status}")
+
+    async def write_temperature_sensor(self, sensor: dict[str, Any]) -> None:
+        """POST /rest/writeTemperatureSensor – name / offset of a 1-Wire sensor (key = id)."""
+        status, _ = await self._request("POST", "/rest/writeTemperatureSensor", sensor)
+        if status != 200:
+            raise EmsEspError(f"writeTemperatureSensor returned HTTP {status}")
+
     async def get_mqtt_settings(self) -> dict[str, Any]:
         """GET /rest/mqttSettings."""
         status, data = await self._request("GET", "/rest/mqttSettings")

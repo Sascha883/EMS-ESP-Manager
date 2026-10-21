@@ -25,6 +25,9 @@ NAMES: dict[str, dict[str, str]] = {
         "watch_mode": "Bus-Mitschnitt",
         "log_level": "Log-Level",
         "tx_mode": "Tx-Modus (Senden)",
+        "locale": "Sprache der EMS-ESP-Werte",
+        "analog_enabled": "Analogsensoren",
+        "gateway_sensors": "Gateway-Sensoren anlegen",
         # binary sensor
         "update_available": "Firmware-Status",
         # sensors
@@ -37,6 +40,7 @@ NAMES: dict[str, dict[str, str]] = {
         "bus_status": "EMS-Bus",
         "num_devices": "Anzahl EMS-Geräte",
         "plant": "Erkannte Anlage",
+        "network": "Netzwerkanschluss",
         "wifi_rssi": "WLAN-Signal",
         "uptime": "Laufzeit seit Neustart",
         "free_heap": "Freier Speicher",
@@ -59,6 +63,7 @@ NAMES: dict[str, dict[str, str]] = {
         "bus_status": "EMS bus",
         "num_devices": "Number of EMS devices",
         "plant": "Detected plant",
+        "network": "Network connection",
         "wifi_rssi": "Wi-Fi signal",
         "uptime": "Uptime since restart",
         "free_heap": "Free memory",
@@ -67,6 +72,9 @@ NAMES: dict[str, dict[str, str]] = {
         "watch_mode": "Bus capture",
         "log_level": "Log level",
         "tx_mode": "Tx mode (sending)",
+        "locale": "Language of the EMS-ESP values",
+        "analog_enabled": "Analog sensors",
+        "gateway_sensors": "Create gateway sensors",
     },
 }
 
@@ -82,6 +90,8 @@ STATES: dict[str, dict[str, str]] = {
         "connected": "Verbunden",
         "tx_errors": "Sendefehler",
         "offline": "Getrennt",
+        "lan": "LAN (Netzwerkkabel)",
+        "wifi": "WLAN",
     },
     "en": {
         "normal": "Normal",
@@ -94,6 +104,8 @@ STATES: dict[str, dict[str, str]] = {
         "connected": "Connected",
         "tx_errors": "Tx errors",
         "offline": "Offline",
+        "lan": "Ethernet (LAN)",
+        "wifi": "Wi-Fi",
     },
 }
 
@@ -112,6 +124,13 @@ WATCH_OPTIONS: dict[str, dict[str, str]] = {
 TX_MODE_OPTIONS: dict[str, dict[str, int]] = {
     "de": {"EMS": 1, "EMS+": 2, "HT3": 3, "Hardware": 4, "Auto": 5},
     "en": {"EMS": 1, "EMS+": 2, "HT3": 3, "Hardware": 4, "Auto": 5},
+}
+
+# EMS-ESP 'locale' setting (src/core/locale_translations.h) – language of the
+# entity names and enum texts EMS-ESP sends to Home Assistant via MQTT discovery
+LOCALE_OPTIONS: dict[str, str] = {
+    "Deutsch": "de", "English": "en", "Nederlands": "nl", "Svenska": "sv", "Polski": "pl",
+    "Norsk": "no", "Français": "fr", "Türkçe": "tr", "Italiano": "it", "Slovenčina": "sk", "Čeština": "cs",
 }
 
 LOG_LEVEL_OPTIONS: dict[str, dict[str, int]] = {

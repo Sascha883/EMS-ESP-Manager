@@ -324,7 +324,7 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.11.22";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.11.25";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -1001,11 +1001,13 @@ const MENUS = {
     FN('Störung zurücksetzen', ()=>askConfirm('Störung zurücksetzen','Die aktuelle Störung der Wärmepumpe wird über EMS-ESP zurückgesetzt (boiler/reset). Ist die Ursache nicht behoben, tritt die Störung erneut auf.', ()=>resetFault('error')), {val:()=>'⟲'}),
     FN('Wartungsmeldung zurücksetzen', ()=>askConfirm('Wartungsmeldung zurücksetzen','Die Wartungsmeldung wird über EMS-ESP zurückgesetzt. Nur nach durchgeführter Wartung verwenden.', ()=>resetFault('maintenance')), {val:()=>'⟲',adv:true}),
   ]},
-  s_info: { title:'Info', svc:true, items:[
+  s_info: { title:'Info', svc:true, get items(){ return [
     NAV('Energie – Details','energylist'),
     FN('Bedieneinheit',()=>{}, {val:()=>'UI 800 · EMS-ESP', ro:true}),
     FN('Verbindung',()=>{}, {val:()=>conn.type, ro:true}),
-  ]},
+    SEC('Geräte am EMS-Bus – Softwarestand'),
+    ...devInfoRows(),
+  ]; } },
   energylist: { title:'Energie – Details', items:[
     SEC('Verbrauch (elektrisch)'),
     RO(B('nrgconstotal'),'Gesamt'),
@@ -1368,6 +1370,17 @@ function mxEditCheck(id){
     ${canW?`<div class="mx-chk" style="margin-top:8px"><span>Schreibtest<small>Schreibt den aktuellen Wert unverändert zurück und prüft, ob EMS-ESP ihn bestätigt.</small></span><span class="mx-btn mx-ghost" data-mx="wt:${esc(id)}">Testen</span></div>`:''}`;
 }
 const MX_DEVT = { boiler:'Wärmeerzeuger', thermostat:'Regler', mixer:'Mischer', solar:'Solar', heatpump:'Wärmepumpe', water:'Warmwasser', heatsource:'Zuheizer', ventilation:'Lüftung', pool:'Pool', extension:'Erweiterung', connect:'Connect', gateway:'Gateway', controller:'Controller', switch:'Schaltmodul', alert:'Alarm' };
+/* ---------- Info: erkannte EMS-Geräte mit Produkt-ID und Softwarestand (EMS-ESP /api/system/info) ---------- */
+function devHex(v){ const t=String(v??'').trim(); if(!t) return '?'; return /^0x/i.test(t)?t:('0x'+t.toUpperCase().padStart(2,'0')); }
+function devInfoRows(){
+  if(!emsDevices) return [TXT(conn.msg?'Geräteliste von EMS-ESP nicht verfügbar.':'Nur mit dem EMS-ESP Manager verfügbar.')];
+  if(!emsDevices.length) return [TXT('EMS-ESP hat keine Geräte erkannt.')];
+  return emsDevices.map(d=>{
+    const typ = MX_DEVT[String(d.type||'').toLowerCase()] || String(d.type||'Gerät');
+    const det = `Bus-ID ${devHex(d.deviceID)} · Produkt-ID ${d.productID??'?'} · Software ${d.version||'?'}${d.brand?' · '+d.brand:''}`;
+    return FN(`${typ}${d.name?' – '+d.name:''}`, ()=>toast(`${typ}: ${det}`, 7000), {val:()=>d.version?`SW ${d.version}`:'–'});
+  }).concat([TXT('Softwarestand, den das Gerät über den EMS-Bus meldet (Telegramm 0x02). Er kann von der Angabe am UI 800 unter Info abweichen. Antippen zeigt Bus-ID und Produkt-ID.')]);
+}
 function mxProfile(){
   if(!emsDevices || !emsDevices.length) return '';
   const list=emsDevices.map(d=>`${MX_DEVT[String(d.type).toLowerCase()]||d.type} ${esc(String(d.name||''))}`).join(' · ');
@@ -1826,14 +1839,13 @@ const RK_PTS = [
   [793,380,'JR1',  B('hpph1'),'t'],
   [803,450,'TR3',  B('hptr3'),'t'],
   [371,463,'TR4',  B('hptr4'),'t'],
-  [958,242,'TC3',  B('hptc3'),'t'],
   [958,415,'PC0',  B('hpcircspd'),'p'],
   [958,485,'TC0',  B('hptc0'),'t'],
   [431,552,'VR1',  B('expvalve'),'p'],
   [736,552,'VR0',  B('recvalve'),'p'],
 ];
 [['hptl2','TL2 Lufteintritt'],['fanspd','PL3 Ventilator'],['hppl1','JR0 Niederdruck (Temp.)'],['hptr5','TR5 Sauggas'],['hptr6','TR6 Heißgas'],
- ['hpph1','JR1 Hochdruck (Temp.)'],['hptr3','TR3 Kältemittel flüssig'],['hptr4','TR4 Verdampfereintritt'],['hptc3','TC3 Kondensator'],
+ ['hpph1','JR1 Hochdruck (Temp.)'],['hptr3','TR3 Kältemittel flüssig'],['hptr4','TR4 Verdampfereintritt'],
  ['hpcircspd','PC0 Heizungspumpe'],['hptc0','TC0 Rücklauf WP'],['expvalve','Expansionsventil VR1'],['recvalve','Receiver-Ventil VR0'],
  ['hpcompspd','ER1 Kompressordrehzahl'],['hptr1','TR1 Kompressor']].forEach(([k,l])=>use(B(k),'ro',{label:l}));
 function vRefrig(t){
@@ -2353,7 +2365,7 @@ const HELP = {
   edit:'Wert mit ˄ / ˅, Mausrad oder Wischen auf der Zahl einstellen. Beim Zurückgehen wird der Wert an die Wärmepumpe gesendet.',
   ov:'Links Außentemperatur (antippen = Verlauf gestern/heute) und Betriebsdruck. Rechts Vor-/Rücklauf der Außeneinheit, Heizkreis und Warmwasser.',
   outdoor:'Verlauf der Außentemperatur aus der Home-Assistant-Historie.',
-  refrig:'Kältekreis im Heizbetrieb. „Werte“ zeigt die aktuellen Messwerte aus EMS-ESP, „Bezeichnungen“ die Bosch-Fühler- und Bauteilnamen. Links Außeneinheit mit Verdampfer (TL2 Lufteintritt, PL3 Ventilator), Mitte Zwischenwärmetauscher (JR0 Niederdruck), oben Kompressor (ER1 Drehzahl, TR1 Temperatur), rechts Kondensator (JR1 Hochdruck) mit Heizwasser TC3/TC0 und Pumpe PC0, unten Expansionsventile VR1/VR0. TR9 liefert EMS-ESP nicht (–).',
+  refrig:'Kältekreis im Heizbetrieb. „Werte“ zeigt die aktuellen Messwerte aus EMS-ESP, „Bezeichnungen“ die Bosch-Fühler- und Bauteilnamen. Links Außeneinheit mit Verdampfer (TL2 Lufteintritt, PL3 Ventilator), Mitte Zwischenwärmetauscher (JR0 Niederdruck), oben Kompressor (ER1 Drehzahl, TR1 Temperatur), rechts Kondensator (JR1 Hochdruck) mit Heizwasser-Rücklauf TC0 und Pumpe PC0, unten Expansionsventile VR1/VR0. TR9 liefert EMS-ESP nicht (–).',
   dhwhist:'Ist- und Solltemperatur Warmwasser von heute (0–24 Uhr) aus der Home-Assistant-Historie. Orange = Ist, blau gestrichelt = Soll.',
 };
 function showHelp(){

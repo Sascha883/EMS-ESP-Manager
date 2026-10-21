@@ -46,7 +46,16 @@ class _BusLogView(HomeAssistantView):
         logs = _logs(hass)
         if not logs:
             return web.Response(status=404, text="EMS-ESP Manager nicht geladen")
-        text = "\n".join(log.export(self.telegrams_only) for log in logs)
+        from .entity_map import ems_devices
+
+        parts = []
+        for log in logs:
+            try:
+                devices = await ems_devices(log._api)  # noqa: SLF001
+            except Exception:  # noqa: BLE001
+                devices = None
+            parts.append(log.export(self.telegrams_only, devices))
+        text = "\n".join(parts)
         stamp = dt_util.now().strftime("%Y%m%d_%H%M")
         name = f"ems-bus-log{'_telegramme' if self.telegrams_only else ''}_{stamp}.txt"
         return web.Response(

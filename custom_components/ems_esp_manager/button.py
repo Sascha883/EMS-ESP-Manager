@@ -59,6 +59,21 @@ async def _install_selected(rt: EmsEspRuntime) -> None:
     await async_install(rt, *found)
 
 
+async def _gateway_sensors(rt: EmsEspRuntime) -> None:
+    from homeassistant.components import persistent_notification
+
+    from .gateway_sensors import async_create_gateway_sensors
+
+    lines = await async_create_gateway_sensors(rt)
+    persistent_notification.async_create(
+        rt.status.hass,
+        "\n".join(f"- {line}" for line in lines),
+        title="EMS-ESP: Gateway-Sensoren",
+        notification_id=f"ems_esp_manager_gateway_sensors_{rt.status.config_entry.entry_id}",
+    )
+    await rt.status.async_request_refresh()
+
+
 async def _clear_log(rt: EmsEspRuntime) -> None:
     if rt.log:
         rt.log.clear()
@@ -101,6 +116,12 @@ BUTTONS = (
         key="clear_log",
         icon="mdi:notification-clear-all",
         press_fn=_clear_log,
+    ),
+    EmsEspButtonDescription(
+        key="gateway_sensors",
+        icon="mdi:chip",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=_gateway_sensors,
     ),
     EmsEspButtonDescription(
         key="check_updates",

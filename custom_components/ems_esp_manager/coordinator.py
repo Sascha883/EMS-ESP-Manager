@@ -49,6 +49,7 @@ class EmsEspRuntime:
     log_level: int = 6
     bus_id: int | None = None   # EMS-ESP's own bus id (settings ems_bus_id), 0x49 since 3.8.2
     tx_mode: int | None = None
+    locale: str | None = None   # EMS-ESP language (settings "locale")
     extra: dict[str, Any] = field(default_factory=dict)
     # callbacks for new bus-log lines – only the entities that show the log, so a
     # busy bus does not make every entity of the integration recalculate each second
