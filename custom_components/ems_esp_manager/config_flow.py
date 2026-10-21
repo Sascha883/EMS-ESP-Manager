@@ -247,6 +247,12 @@ FIELD_ADMIN = "In Sidebar Admin anzeigen"
 FIELD_PANEL_SIDEBAR = "Bosch HMI 800: in Sidebar Benutzer anzeigen"
 FIELD_PANEL_ADMIN = "Bosch HMI 800: in Sidebar Admin anzeigen"
 FIELD_TOKEN = "Bosch HMI 800: Token für Zugriff von außen (optional)"
+
+TOKEN_HELP = (
+    "Token in Home Assistant erstellen: Profil (unten links) → Sicherheit → "
+    "Langlebige Zugriffstoken → Token erstellen. Den angezeigten langen Text "
+    "(beginnt mit „eyJ…“) hier einfügen – nicht den Namen."
+)
 FIELD_KIOSK = "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)"
 FIELD_INST_NAME = "Bosch HMI 800: Fachbetrieb – Name (Info-Seite)"
 FIELD_INST_ADDR = "Bosch HMI 800: Fachbetrieb – Adresse"
@@ -264,7 +270,16 @@ class EmsEspOptionsFlow(OptionsFlow):
 
         mgr = get_manager(self.hass)
         options = self.config_entry.options
+        errors: dict[str, str] = {}
         if user_input is not None:
+            tok = (user_input.get(FIELD_TOKEN) or "").strip()
+            if tok:
+                rt = self.hass.auth.async_validate_access_token(tok)
+                if rt is None:
+                    errors[FIELD_TOKEN] = "panel_token_invalid"
+                elif rt.token_type != "long_lived_access_token":
+                    errors[FIELD_TOKEN] = "panel_token_not_long_lived"
+        if user_input is not None and not errors:
             if mgr is not None and user_input.get(FIELD_NEW_KEY):
                 await mgr.async_new_kiosk_key()
             return self.async_create_entry(
@@ -290,7 +305,11 @@ class EmsEspOptionsFlow(OptionsFlow):
             ): bool,
             vol.Optional(
                 FIELD_TOKEN,
-                description={"suggested_value": options.get(CONF_PANEL_TOKEN, "")},
+                description={
+                    "suggested_value": (user_input or {}).get(
+                        FIELD_TOKEN, options.get(CONF_PANEL_TOKEN, "")
+                    )
+                },
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
             vol.Optional(
                 FIELD_INST_NAME, description={"suggested_value": options.get(CONF_INSTALLER_NAME, "")}
@@ -307,4 +326,9 @@ class EmsEspOptionsFlow(OptionsFlow):
                 vol.Optional(FIELD_KIOSK, description={"suggested_value": mgr.kiosk_url()})
             ] = TextSelector(TextSelectorConfig(read_only=True))
             schema[vol.Optional(FIELD_NEW_KEY, default=False)] = bool
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={"token_help": TOKEN_HELP},
+        )

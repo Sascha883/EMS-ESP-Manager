@@ -324,10 +324,11 @@ const ENTITY_OVERRIDES = {
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2026.11.25";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2026.11.26";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
+let LAST_CONN_ERR = '';
 const MGR_PAGE = MGR && MGR.page || '';
 
 /* =====================================================================
@@ -551,12 +552,31 @@ async function connect(){
   }
   // b) eigener WebSocket mit Token (Token aus Datei-Kopf hat Vorrang)
   if(MGR && MGR.kiosk_error) toast(MGR.kiosk_error, 6000);
-  const token = HA_TOKEN || (MGR && MGR.token) || settings.token;
-  if(settings.mode!=='demo' && token){
+  // Reihenfolge: Token im Datei-Kopf → Token aus „Konfigurieren“ (Kiosk-Adresse) → Token aus den Panel-Einstellungen
+  const cands = [];
+  if(HA_TOKEN) cands.push([HA_TOKEN,'Datei-Kopf']);
+  if(MGR && MGR.token) cands.push([MGR.token,'Konfigurieren']);
+  if(settings.token && !cands.some(c=>c[0]===settings.token)) cands.push([settings.token,'Panel-Einstellungen']);
+  if(settings.mode!=='demo' && cands.length){
     let base = HA_URL || settings.url || location.origin;
     if(!/^https?:/.test(base)) base = 'http://homeassistant.local:8123';
     const url = base.replace(/^http/,'ws').replace(/\/$/,'')+'/api/websocket';
-    try{ await wsConnect(url, token); await loadMgr(); return; }catch(e){ toast('WebSocket: '+e); }
+    const errs = [];
+    for(const [tok,src] of cands){
+      try{ await wsConnect(url, tok); conn.tokenSrc=src; await loadMgr(); return; }
+      catch(e){
+        errs.push(e);
+        if(e==='Token ungültig'){
+          toast(src==='Konfigurieren'
+            ? 'Token aus „EMS-ESP Manager → Konfigurieren“ ungültig. Neuen Token in HA unter Profil → Sicherheit → Langlebige Zugriffstoken erstellen und dort einfügen.'
+            : 'Token aus '+src+' ungültig. Token muss in HA unter Profil → Sicherheit → Langlebige Zugriffstoken erstellt werden.', 9000);
+          continue;
+        }
+        toast('WebSocket: '+e+' ('+url.replace(/^ws/,'http').replace('/api/websocket','')+')', 7000);
+        break;
+      }
+    }
+    LAST_CONN_ERR = errs.join(' · ');
   }
   // c) Demo
   startDemo();
@@ -2214,14 +2234,17 @@ function vCurve(n){
 }
 
 function vConn(t){
-  const modes=[['auto','Automatisch (HA-Anmeldung)'],['token','Long-Lived-Token'],['demo','Demo-Modus']];
+  const modes=[['auto','Automatisch (HA-Anmeldung)'],['token','Langlebiger Token (HA)'],['demo','Demo-Modus']];
   return header('Internet')+`<div class="body kbd"><div class="list">
     <div class="row ro"><span class="k">Status</span><span class="v">${conn.type==='demo'?'<span class="pill dm">Demo</span>':conn.ready?'<span class="pill">Verbunden ('+conn.type+')</span>':'<span class="pill no">Getrennt</span>'}</span></div>
+    ${conn.type==='demo'&&LAST_CONN_ERR?`<div class="row ro"><span class="k">Letzter Fehler</span><span class="v">${esc(LAST_CONN_ERR)}</span></div>`:''}
+    ${MGR&&MGR.kiosk?`<div style="padding:10px 14px;font-size:14px;color:#aaa">Geöffnet über die Kiosk-Adresse: Verwendet wird der Token aus <b>EMS-ESP Manager → Konfigurieren</b>${conn.tokenSrc==='Panel-Einstellungen'?' – er war ungültig, verbunden wurde mit dem Token aus den Panel-Einstellungen':''}.</div>`:''}
     <div class="row ro"><span class="k">Entitäten in HA</span><span class="v d">${Object.keys(S).length}</span></div>
     ${modes.map(m=>`<div class="row" data-a="${a(()=>{settings.mode=m[0];saveSettings();render();})}"><span class="k">${m[1]}</span><span class="rad ${settings.mode===m[0]?'on':''}"></span></div>`).join('')}
     ${settings.mode==='token'?`<div style="padding:12px 14px"><div style="font-size:15px;color:#aaa;margin-bottom:6px">HA-Adresse (leer = gleiche Adresse)</div><input id="iurl" value="${esc(settings.url)}" placeholder="http://homeassistant.local:8123">
-      <div style="font-size:15px;color:#aaa;margin:12px 0 6px">Long-Lived Access Token (HA → Profil → Sicherheit)</div><input id="itok" type="password" value="${esc(settings.token)}"></div>`:''}
-    <div class="note">${MGR?`Panel-Version ${esc(PANEL_VERSION)} · ausgeliefert vom EMS-ESP Manager. In Home Assistant wird die Anmeldung von HA genutzt; für den Zugriff von außen den Token im Manager unter „Konfigurieren“ hinterlegen und die Kiosk-Adresse verwenden.`:'„Automatisch“ funktioniert, wenn die Seite als Webseiten-Dashboard in Home Assistant (/local/…) eingebunden ist.'}</div>
+      <div style="font-size:15px;color:#aaa;margin:12px 0 6px">Langlebiger Zugriffstoken aus Home Assistant</div><input id="itok" type="password" value="${esc(settings.token)}">
+      <div style="font-size:13px;color:#888;margin-top:8px;line-height:1.4">Token in HA erstellen: Profil (unten links) → Sicherheit → Langlebige Zugriffstoken → Token erstellen. Den langen Text (beginnt mit „eyJ…“) einfügen, nicht den Namen. Der Kiosk-Schlüssel aus dem EMS-ESP Manager ist kein Token.</div></div>`:''}
+    <div class="note">${MGR?`Panel-Version ${esc(PANEL_VERSION)} · ausgeliefert vom EMS-ESP Manager. In Home Assistant wird die Anmeldung von HA genutzt; für den Zugriff von außen einen langlebigen Zugriffstoken in HA (Profil → Sicherheit) erstellen, im Manager unter „Konfigurieren“ einfügen und die Kiosk-Adresse verwenden.`:'„Automatisch“ funktioniert, wenn die Seite als Webseiten-Dashboard in Home Assistant (/local/…) eingebunden ist.'}</div>
   </div></div>
   <div class="btns"><div class="btn pri" data-a="${a(()=>{ const u=$('#iurl'),k=$('#itok'); if(u) settings.url=u.value.trim(); if(k) settings.token=k.value.trim(); saveSettings(); location.reload(); })}">Übernehmen & neu verbinden</div></div>`;
 }

@@ -142,16 +142,26 @@
     "step": {
       "init": {
         "title": "EMS-ESP dashboard",
-        "description": "Choose who sees the “EMS-ESP” dashboard in the sidebar.",
+        "description": "Choose who sees the “EMS-ESP” dashboard and the Bosch HMI 800 panel in the sidebar.\n\n**Access from outside (wall tablet, Safari, kiosk):** the panel needs a long-lived access token from Home Assistant. The integration cannot create this token itself – it is your authorisation for the access.\n1. Create the token in Home Assistant: Profile (bottom left) → Security → Long-lived access tokens → Create token. Paste the long text (starts with “eyJ…”), not its name.\n2. Paste the token below and **Submit**.\n3. Open **Configure** again and copy the **kiosk address**.",
         "data": {
           "In Sidebar Benutzer anzeigen": "Show in sidebar for users",
-          "In Sidebar Admin anzeigen": "Show in sidebar for admins only"
+          "In Sidebar Admin anzeigen": "Show in sidebar for admins only",
+          "Bosch HMI 800: Token für Zugriff von außen (optional)": "Bosch HMI 800: long-lived access token from HA (for access from outside)",
+          "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)": "Bosch HMI 800: kiosk address (copy only)",
+          "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "Bosch HMI 800: create new kiosk key (old address stops working)"
         },
         "data_description": {
           "In Sidebar Benutzer anzeigen": "Off: no sidebar entry. The dashboard stays reachable for administrators at /ems-esp.",
-          "In Sidebar Admin anzeigen": "On: only administrators see the dashboard; other users neither see nor can open it."
+          "In Sidebar Admin anzeigen": "On: only administrators see the dashboard; other users neither see nor can open it.",
+          "Bosch HMI 800: Token für Zugriff von außen (optional)": "Paste only the token from HA → Profile → Security → Long-lived access tokens. The kiosk key is not a token. Checked on save.",
+          "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)": "Open this address on the tablet. It always uses the token above – a token in the panel settings is not used.",
+          "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "Only creates a new key for the kiosk address (e.g. if a device was lost). Does not create a token."
         }
       }
+    },
+    "error": {
+      "panel_token_invalid": "Home Assistant does not know this token. Create a new one under Profile → Security → Long-lived access tokens and paste the full text (starts with “eyJ…”).",
+      "panel_token_not_long_lived": "This is not a long-lived token (it expires soon). Create one under Profile → Security → Long-lived access tokens."
     }
   }
 }
