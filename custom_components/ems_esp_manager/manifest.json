@@ -19,7 +19,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Sascha883/EMS-ESP-Manager/issues",
   "requirements": [],
-  "version": "1.12.13",
+  "version": "1.12.19",
   "zeroconf": [
     {
       "type": "_http._tcp.local.",
