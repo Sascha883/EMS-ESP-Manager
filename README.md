@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/banner.jpg" alt="EMS-ESP Manager – Haustechnik aus der Praxis" width="100%">
+</p>
+
 # EMS-ESP Manager für Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
@@ -5,11 +9,12 @@
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.2%2B-41BDF5.svg)](https://www.home-assistant.io)
 [![Lizenz](https://img.shields.io/badge/Lizenz-PolyForm%20Noncommercial-lightgrey.svg)](LICENSE)
 
-Custom-Integration, mit der du ein [EMS-ESP](https://github.com/emsesp/EMS-ESP32)-Gateway (z. B. von BBQKees) komplett aus Home Assistant bedienst – ohne die EMS-ESP-Weboberfläche. Dazu gibt es ein **Bosch-HMI-800-Panel**, das sich wie das Original-Display der Wärmepumpe bedienen lässt.
+Custom-Integration, mit der du ein [EMS-ESP](https://github.com/emsesp/EMS-ESP32)-Gateway (z. B. von BBQKees) komplett aus Home Assistant bedienst – ohne die EMS-ESP-Weboberfläche. Dazu gibt es ein **Bosch-HMI-800-Panel**, das sich wie das Original-Display der Wärmepumpe bedienen lässt, und **EMS-Regelfunktionen** wie die Warmwasseroptimierung mit PV-Strom.
 
 Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
 
-> **Hinweis:** Kein offizielles Projekt von EMS-ESP, BBQKees oder Bosch. Nutzung auf eigene Gefahr – Änderungen an Wärmepumpen-Parametern nur mit Fachkenntnis.
+> [!NOTE]
+> Kein offizielles Projekt von EMS-ESP, BBQKees oder Bosch. Nutzung auf eigene Gefahr – Änderungen an Wärmepumpen-Parametern nur mit Fachkenntnis.
 
 <p align="center">
   <img src="docs/images/vorschau.gif" alt="Vorschau Bosch HMI 800 Panel" width="640">
@@ -35,22 +40,35 @@ Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
 
 ### Bosch HMI 800 Panel
 - Bedienoberfläche im Stil des Bosch UI 800 – als Eintrag in der Seitenleiste oder als **Kiosk-Adresse** für ein Wand-Tablet.
-- Heizen und Warmwasser mit Aus / Auto / Manuell, Wunschtemperatur per Rolle, Extra-Warmwasser.
-- **Schaltzeiten** für Heizkreis 1 und Warmwasser lesen und schreiben (Telegramme `0x02C3` und `0x02FF` – kennt EMS-ESP selbst nicht).
+- **Heizen** mit Aus / Auto / Manuell, Wunschtemperatur per Rolle, Heizkurve mit Soll- und Ist-Linie, Vorlauf-Soll und aktuelles Niveau auf der Heizkreis-Kachel.
+- **Warmwasser** mit Betriebsart, Extra-Warmwasser und **Verlauf der Warmwassertemperatur** (Soll/Ist, heute).
+- **Programmzeiten** für Heizkreis 1 und Warmwasser lesen und schreiben (Telegramme `0x02C3` und `0x02FF` – kennt EMS-ESP selbst nicht).
 - **Energie Monitoring** mit Tageswerten („Heute“) und Gesamtwerten, Anteil Umweltwärme und Arbeitszahl.
-- Systemübersicht, Heizkurve, Sommer-/Winterumschaltung, Servicemenü mit Diagnose.
+- Systemübersicht, Sommer-/Winterumschaltung, Kühlfunktionen ein-/ausblendbar.
+- **Servicemenü** mit Diagnose und **Übersicht Kältekreislauf** (Temperaturen, Drücke, Kompressor, Ventilator, Expansionsventile – umschaltbar auf Bosch-Bezeichnungen).
+- **Geräte am EMS-Bus** mit Softwarestand, Bus-ID und Produkt-ID (Service → Info).
 - **Störung und Wartungsmeldung zurücksetzen** direkt im Panel.
-- **Automatische Entitäts-Zuordnung** – funktioniert mit allen EMS-ESP-Entity-ID-Formaten (Kurz- und Langnamen, mit Präfix, umbenannt).
+- **Automatische Entitäts-Zuordnung** – funktioniert mit allen EMS-ESP-Entity-ID-Formaten (Kurz- und Langnamen, mit Präfix, umbenannt), inklusive Prüfung Lesen/Schreiben. Werte, die in HA fehlen, lassen sich mit einem Klick anlegen.
+
+### EMS-Regelung
+Regelfunktionen, die in Home Assistant laufen – auch wenn das Panel geschlossen ist.
+- **Warmwasseroptimierung:** Ist viel Sonne zu erwarten, wird der Speicher einmal am Tag höher aufgeheizt (Standard 60 °C), damit die Wärmepumpe mit eigenem PV-Strom läuft.
+  - Vorhersage über eine **PV-Prognose**-Entität (kWh, z. B. Forecast.Solar, Solcast) oder eine **Wetter**-Entität (Bewölkung).
+  - Optional zusätzlich **PV-Überschuss** (W/kW).
+  - Zeitfenster und Zieltemperatur einstellbar; danach werden Betriebsart und Stopptemperatur automatisch zurückgesetzt.
 
 ### Manager-Dashboard „EMS-ESP“
-- **System & Firmware** – Status, Bus, WLAN, Laufzeit; Firmware-Updates und Wechsel auf ältere stabile Versionen direkt aus HA.
+- **System & Firmware** – Status, Bus, Netzwerkanschluss (LAN/WLAN), WLAN-Signal, Laufzeit; Firmware-Updates und Wechsel auf ältere stabile Versionen direkt aus HA.
+- **Gateway-Sensoren** – Analogsensoren ein/aus; Kernspannung, Versorgungsspannung und Gateway-Temperatur beim BBQKees Gateway E32 V2.2 per Taste anlegen.
+- **Sprache der EMS-ESP-Werte** umschalten (z. B. Deutsch) – Entitäts-IDs bleiben gleich.
+- **Uhrzeit** – EMS-ESP-Zeit im Vergleich zu HA, Zeitserver (NTP), Zeitzone, „Uhrzeit von Home Assistant übernehmen“.
 - **Einstellungen und Messwerte** aller EMS-Geräte, automatisch erzeugt.
 - **Zuordnung** der Panel-Felder, gruppiert nach Heizung, Warmwasser, Wärmepumpe, Energie.
-- **Bus-Log** – Live-Mitschnitt der EMS-Telegramme, Download als Textdatei, Log-Level und Tx-Modus einstellbar.
+- **Bus-Log** – Live-Mitschnitt der EMS-Telegramme, Download als Textdatei (mit Manager-Version und Geräteliste), Log-Level und Tx-Modus einstellbar.
 - **MQTT** – alle MQTT-Einstellungen des EMS-ESP (Broker, Discovery, Entity-ID-Format, Sendeintervalle) mit Statusanzeige.
 - **Web-Oberfläche** des EMS-ESP eingebettet.
 
-📄 Ausführliche Anleitung: [Installationsanleitung (PDF)](EMS-ESP-Manager_Installationsanleitung_v1.10.2.pdf)
+📄 Ausführliche Anleitung: [Installationsanleitung (PDF, Stand v1.10.2)](docs/EMS-ESP-Manager_Installationsanleitung_v1.10.2.pdf)
 
 ---
 
@@ -63,20 +81,20 @@ Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
 | <img src="docs/images/panel-start.png" width="400"> | <img src="docs/images/panel-heizen.png" width="400"> |
 | **Warmwasser** | **Systemübersicht** |
 | <img src="docs/images/panel-warmwasser.png" width="400"> | <img src="docs/images/panel-system.png" width="400"> |
-| **Energie Monitoring** | **Schaltzeiten Warmwasser** |
+| **Energie Monitoring** | **Programmzeiten Warmwasser** |
 | <img src="docs/images/panel-energie.png" width="400"> | <img src="docs/images/panel-schaltzeiten.png" width="400"> |
-| **Heizkurve** | **Entitäten-Zuordnung** |
-| <img src="docs/images/panel-heizkurve.png" width="400"> | <img src="docs/images/panel-zuordnung.png" width="400"> |
+| **Heizkurve** | **Übersicht Kältekreislauf** |
+| <img src="docs/images/panel-heizkurve.png" width="400"> | <img src="docs/images/panel-kaeltekreis.png" width="400"> |
 
 ### Manager-Dashboard in Home Assistant
 
 | System & Firmware | Bus-Log |
 |:---:|:---:|
 | <img src="docs/images/ha-system.png" width="400"> | <img src="docs/images/ha-buslog.png" width="400"> |
-| **MQTT-Einstellungen** | **Servicemenü (Panel)** |
-| <img src="docs/images/ha-mqtt.png" width="400"> | <img src="docs/images/panel-service.png" width="400"> |
+| **MQTT-Einstellungen** | **Entitäten-Zuordnung** |
+| <img src="docs/images/ha-mqtt.png" width="400"> | <img src="docs/images/panel-zuordnung.png" width="400"> |
 
-<sub>Screenshots mit Demo-Daten.</sub>
+<sub>Screenshots mit Demo-Daten; einzelne Bilder zeigen ältere Versionen.</sub>
 
 ---
 
@@ -84,10 +102,10 @@ Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
 
 | | |
 |---|---|
-| **Home Assistant** | 2025.2 oder neuer |
-| **EMS-ESP** | 3.7 oder neuer (getestet mit 3.8.6), Zugang mit Admin-Benutzer |
+| **Home Assistant** | 2025.2 oder neuer (eigenes Integrations-Logo ab 2026.3) |
+| **EMS-ESP** | 3.7 oder neuer (getestet mit 3.8.x), Zugang mit Admin-Benutzer |
 | **MQTT** | MQTT-Integration in Home Assistant, EMS-ESP mit aktivierter HA-Discovery |
-| **Verlauf** | Recorder aktiv (Standard) – für die Tageswerte im Energie Monitoring |
+| **Verlauf** | Recorder aktiv (Standard) – für Tageswerte und Warmwasser-Verlauf |
 
 ---
 
@@ -107,7 +125,7 @@ Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
 
 ### Update
 
-Über HACS aktualisieren (oder den Ordner ersetzen), Home Assistant neu starten und das Panel einmal neu laden (Strg+F5). Zuordnung, Heizkreis-Namen, Kiosk-Schlüssel und gespeicherte Schaltzeiten bleiben erhalten.
+Über HACS aktualisieren (oder den Ordner ersetzen), Home Assistant neu starten und das Panel einmal neu laden (Strg+F5). Zuordnung, Heizkreis-Namen, Kiosk-Schlüssel, Programmzeiten und die Einstellungen der EMS-Regelung bleiben erhalten.
 
 ---
 
@@ -147,7 +165,9 @@ Eigene Zuordnungen im Reiter **„Zuordnung“** haben immer Vorrang.
 - **Tx-Modus nicht auf „Auto“ lassen.** Ab EMS-ESP 3.8.2 ist „Auto“ Standard; bei der CS5800i wählte die Automatik nach einem Neustart teils falsch (Bus-Status „Sendefehler“, Regler nicht erkannt). Fest **EMS+** (oder EMS) funktioniert.
 - **Warmwasser Start-/Stopptemperatur:** Die Wärmepumpe erzwingt Stopp ≥ Start + 6 K (Komfort) bzw. + 7 K (Eco, Eco+) und hebt zu kleine Werte ohne Meldung an. Beim Absenken zuerst die Start-, dann die Stopptemperatur ändern.
 - Die „Temp.-diff. für Beladung“ (`comfdiff` / `ecodiff` / `ecoplusdiff`) ist das Ladedelta (Vorlauf über Warmwassertemperatur), nicht der Abstand zwischen Start und Stopp.
-- **Schaltzeiten:** Der Regler beantwortet Leseanfragen nur in seinen 24-Byte-Blöcken; geschrieben wird immer das komplette Wochenprogramm – genau wie es das Display macht.
+- **Programmzeiten:** Der Regler beantwortet Leseanfragen nur in seinen 24-Byte-Blöcken; geschrieben wird immer das komplette Wochenprogramm – genau wie es das Display macht.
+- **Aktuelles Niveau (Heizen/Absenken):** EMS-ESP meldet es beim UI 800 teils falsch. Das Panel ermittelt es deshalb aus den gelesenen Programmzeiten.
+- **Uhrzeit:** Hat das Gateway keinen Internetzugang, läuft die EMS-ESP-Uhr weg. Im Reiter „Uhrzeit“ lässt sie sich von Home Assistant übernehmen.
 
 ---
 
@@ -162,7 +182,7 @@ Bitte ein [Issue](https://github.com/Sascha883/EMS-ESP-Manager/issues) anlegen m
   ```
   {{ integration_entities('mqtt') | select('search', 'thermostat|boiler') | list }}
   ```
-- Bei Bus-Themen: Telegramm-Log aus dem Reiter **Bus-Log** (Download).
+- Bei Bus-Themen: Download aus dem Reiter **Bus-Log** (enthält Manager-Version und Geräteliste).
 
 ---
 
@@ -180,7 +200,10 @@ Die Nutzung erfolgt auf eigene Gefahr und ohne jegliche Gewährleistung oder Haf
 ---
 
 <p align="center">
-  <img src="docs/images/logo.png" alt="SM Haustechnik" width="90"><br>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.png">
+    <img src="docs/images/logo-light.png" alt="SM Haustechnik" width="90">
+  </picture><br>
   <b>Sascha Matheis Haustechnik</b> · Espenau · Kassel · Nordhessen<br>
   <a href="https://haustechnik-matheis.de">haustechnik-matheis.de</a> · Instagram <a href="https://www.instagram.com/haustechnik_matheis">@haustechnik_matheis</a>
 </p>
