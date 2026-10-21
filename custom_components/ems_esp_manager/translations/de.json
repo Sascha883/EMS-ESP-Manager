@@ -41,7 +41,8 @@
     "abort": {
       "already_configured": "Dieser EMS-ESP ist bereits eingerichtet.",
       "reauth_successful": "Anmeldung erneuert.",
-      "reconfigure_successful": "Einstellungen gespeichert."
+      "reconfigure_successful": "Einstellungen gespeichert.",
+      "not_ipv4_address": "Es werden nur IPv4-Adressen angeboten."
     }
   },
   "entity": {
@@ -63,6 +64,9 @@
       },
       "clear_log": {
         "name": "Log leeren"
+      },
+      "gateway_sensors": {
+        "name": "Gateway-Sensoren anlegen"
       }
     },
     "select": {
@@ -77,6 +81,9 @@
       },
       "tx_mode": {
         "name": "Tx-Modus (Senden)"
+      },
+      "locale": {
+        "name": "Sprache der EMS-ESP-Werte"
       }
     },
     "binary_sensor": {
@@ -106,6 +113,9 @@
       "num_devices": {
         "name": "Anzahl EMS-Geräte"
       },
+      "network": {
+        "name": "Netzwerkanschluss"
+      },
       "wifi_rssi": {
         "name": "WLAN-Signal"
       },
@@ -121,22 +131,37 @@
       "plant": {
         "name": "Erkannte Anlage"
       }
+    },
+    "switch": {
+      "analog_enabled": {
+        "name": "Analogsensoren"
+      }
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "EMS-ESP Dashboard",
-        "description": "Legt fest, wer das Dashboard „EMS-ESP“ in der Seitenleiste sieht.",
+        "description": "Legt fest, wer das Dashboard „EMS-ESP“ und das Bosch-HMI-800-Panel in der Seitenleiste sieht.\n\n**Zugriff von außen (Wandtablet, Safari, Kiosk):** Das Panel braucht dafür einen langlebigen Zugriffstoken aus Home Assistant. Die Integration kann diesen Token nicht selbst anlegen – er ist deine Freigabe für den Zugriff.\n1. {token_help}\n2. Token unten einfügen und **Absenden**.\n3. **Konfigurieren** erneut öffnen und die **Kiosk-Adresse** kopieren.",
         "data": {
           "In Sidebar Benutzer anzeigen": "In Sidebar Benutzer anzeigen",
-          "In Sidebar Admin anzeigen": "In Sidebar Admin anzeigen"
+          "In Sidebar Admin anzeigen": "In Sidebar Admin anzeigen",
+          "Bosch HMI 800: Token für Zugriff von außen (optional)": "Bosch HMI 800: Langlebiger Zugriffstoken aus HA (für Zugriff von außen)",
+          "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)": "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)",
+          "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)"
         },
         "data_description": {
           "In Sidebar Benutzer anzeigen": "Aus: kein Eintrag in der Seitenleiste. Das Dashboard bleibt für Administratoren unter /ems-esp erreichbar.",
-          "In Sidebar Admin anzeigen": "An: nur Administratoren sehen das Dashboard. Benutzer ohne Administratorrechte sehen es nicht und können es auch nicht öffnen."
+          "In Sidebar Admin anzeigen": "An: nur Administratoren sehen das Dashboard. Benutzer ohne Administratorrechte sehen es nicht und können es auch nicht öffnen.",
+          "Bosch HMI 800: Token für Zugriff von außen (optional)": "Nur den Token aus HA → Profil → Sicherheit → Langlebige Zugriffstoken einfügen. Der Kiosk-Schlüssel ist kein Token. Wird beim Speichern geprüft.",
+          "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)": "Diese Adresse auf dem Tablet öffnen. Sie verwendet immer den Token oben – ein Token in den Panel-Einstellungen wird dabei nicht benutzt.",
+          "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "Erzeugt nur einen neuen Schlüssel für die Kiosk-Adresse (z. B. wenn ein Gerät verloren ging). Erzeugt keinen Token."
         }
       }
+    },
+    "error": {
+      "panel_token_invalid": "Home Assistant kennt diesen Token nicht. Bitte in HA unter Profil → Sicherheit → Langlebige Zugriffstoken einen neuen Token erstellen und den vollständigen Text (beginnt mit „eyJ…“) einfügen.",
+      "panel_token_not_long_lived": "Das ist kein langlebiger Token (läuft nach kurzer Zeit ab). Bitte unter Profil → Sicherheit → Langlebige Zugriffstoken einen Token erstellen."
     }
   }
 }

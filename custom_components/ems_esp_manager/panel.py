@@ -349,7 +349,7 @@ class PanelView(HomeAssistantView):
                 return web.Response(status=403, text="Ungültiger Kiosk-Schlüssel")
             if not mgr.token:
                 cfg["kiosk_error"] = (
-                    "Kein Token hinterlegt (EMS-ESP Manager → Konfigurieren)."
+                    "Kein Token hinterlegt. Token in HA unter Profil → Sicherheit → Langlebige Zugriffstoken erstellen und unter EMS-ESP Manager → Konfigurieren einfügen."
                 )
             else:
                 cfg["token"] = mgr.token
@@ -821,7 +821,7 @@ function show(i){
     h+= i.kiosk_url
       ? `<div class="row"><span>Zugriff von außen (Kiosk)</span><a href="#" id="ks">Adresse anzeigen</a></div>
          <div id="kv" hidden><code>${esc(i.kiosk_url)}</code><div class="hint">Enthält einen geheimen Schlüssel – nur auf eigenen Geräten verwenden. Neuer Schlüssel: EMS-ESP Manager → Konfigurieren.</div></div>`
-      : `<div class="row"><span>Zugriff von außen (Kiosk)</span><span>kein Token hinterlegt</span></div>`;
+      : `<div class="row"><span>Zugriff von außen (Kiosk)</span><span>kein Token hinterlegt</span></div><div class="hint">Token in HA unter Profil → Sicherheit → Langlebige Zugriffstoken erstellen und unter EMS-ESP Manager → Konfigurieren einfügen. Danach erscheint hier die Adresse.</div>`;
   }
   $('#info').innerHTML=h;
   const ks=$('#ks'); if(ks) ks.onclick=e=>{ e.preventDefault(); const v=$('#kv'); v.hidden=!v.hidden; ks.textContent=v.hidden?'Adresse anzeigen':'ausblenden'; };
