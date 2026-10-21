@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import EmsEspConfigEntry
 from .api import EmsEspError
 from .entity import EmsEspEntity
-from .names import LOG_LEVEL_OPTIONS, TX_MODE_OPTIONS, WATCH_OPTIONS
+from .names import LOCALE_OPTIONS, LOG_LEVEL_OPTIONS, TX_MODE_OPTIONS, WATCH_OPTIONS
 
 
 async def async_setup_entry(
@@ -28,6 +28,7 @@ async def async_setup_entry(
             EmsEspWatchSelect(entry),
             EmsEspLogLevelSelect(entry),
             EmsEspTxModeSelect(entry),
+            EmsEspLocaleSelect(entry),
         ]
     )
 
@@ -188,6 +189,58 @@ class EmsEspTxModeSelect(EmsEspEntity, SelectEntity):
             if rt.log is not None:
                 rt.log.note(f"Tx-Modus auf {option} gestellt – EMS-ESP wird neu gestartet")
             await rt.api.command("system", "restart")
+        except EmsEspError as err:
+            raise HomeAssistantError(f"EMS-ESP: {err}") from err
+        self.async_write_ha_state()
+
+
+class EmsEspLocaleSelect(EmsEspEntity, SelectEntity):
+    """Language of the EMS-ESP values (settings 'locale').
+
+    EMS-ESP sends the entity names and the texts of selections (e.g. "Auto" /
+    "Aus") to Home Assistant in this language. After a change EMS-ESP
+    reconnects MQTT and sends the discovery again – Home Assistant then shows
+    the new names. Entity IDs stay the same (they are built from the English
+    short names), so dashboards, automations and the panel mapping keep working.
+    No restart of EMS-ESP is needed.
+    """
+
+    _attr_icon = "mdi:translate"
+
+    def __init__(self, entry: EmsEspConfigEntry) -> None:
+        super().__init__(entry, "locale")
+        self._attr_options = list(LOCALE_OPTIONS)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._runtime.status.async_add_listener(self.async_write_ha_state)
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        for label, code in LOCALE_OPTIONS.items():
+            if code == self._runtime.locale:
+                return label
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"locale": self._runtime.locale}
+
+    async def async_select_option(self, option: str) -> None:
+        code = LOCALE_OPTIONS[option]
+        rt = self._runtime
+        if code == rt.locale:
+            return
+        try:
+            data = await rt.api.set_settings({"locale": code})
+            rt.locale = str(data.get("locale", code))
+            if rt.log is not None:
+                rt.log.note(
+                    f"Sprache der EMS-ESP-Werte auf {option} ({code}) gestellt – "
+                    "EMS-ESP sendet die Home-Assistant-Erkennung neu"
+                )
         except EmsEspError as err:
             raise HomeAssistantError(f"EMS-ESP: {err}") from err
         self.async_write_ha_state()

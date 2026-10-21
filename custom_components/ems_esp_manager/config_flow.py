@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import ipaddress
 import logging
+import socket
 from typing import Any
 
 import voluptuous as vol
@@ -40,6 +42,27 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _norm_host(value: Any) -> str:
+    """'http://EMS-ESP.local:80/' -> 'ems-esp.local' (for comparing hosts)."""
+    h = str(value or "").strip().lower()
+    if "://" in h:
+        h = h.split("://", 1)[1]
+    h = h.split("/", 1)[0].rstrip(".")
+    if h.startswith("["):                      # [IPv6]:port
+        return h[1:].split("]", 1)[0]
+    if h.count(":") == 1:                      # host:port
+        h = h.split(":", 1)[0]
+    return h
+
+
+def _resolve(host: str) -> set[str]:
+    """All IPv4 addresses of a host name (blocking, run in executor)."""
+    try:
+        return {i[4][0] for i in socket.getaddrinfo(host, None, socket.AF_INET)}
+    except OSError:
+        return set()
 
 
 def _schema(defaults: Mapping[str, Any]) -> vol.Schema:
@@ -119,9 +142,48 @@ class EmsEspConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """EMS-ESP announces itself as _http._tcp with hostname 'ems-esp'."""
-        host = str(discovery_info.ip_address)
-        self._async_abort_entries_match({CONF_HOST: host})
-        await self.async_set_unique_id(host.lower())
+        ip = discovery_info.ip_address
+        if ip is None or ip.version != 4:
+            # EMS-ESP meldet sich auch per IPv6 – nur IPv4 anbieten (sonst doppelt)
+            return self.async_abort(reason="not_ipv4_address")
+        host = str(ip)
+        name = _norm_host(discovery_info.hostname)          # z. B. ems-esp.local
+        known = {host, name, name.removesuffix(".local")} - {""}
+
+        # Schon eingerichtet? Vergleich über IP, Hostname (mit/ohne .local,
+        # http://, Port) und – falls ein Name eingetragen ist – dessen IP.
+        for entry in self._async_current_entries(include_ignore=True):
+            if entry.unique_id and _norm_host(entry.unique_id) in known:
+                return self.async_abort(reason="already_configured")
+            entry_host = _norm_host(entry.data.get(CONF_HOST))
+            if not entry_host:
+                continue
+            if entry_host in known:
+                return self.async_abort(reason="already_configured")
+            try:
+                ipaddress.ip_address(entry_host)
+                continue                                 # andere IP
+            except ValueError:
+                pass
+            if host in await self.hass.async_add_executor_job(_resolve, entry_host):
+                return self.async_abort(reason="already_configured")
+
+        # Last check: ask every configured gateway for its real IP address
+        # (/rest/networkStatus local_ip). Catches entries set up with a host
+        # name HA cannot resolve, a different spelling or a changed DHCP address.
+        for entry in self._async_current_entries(include_ignore=False):
+            rt = getattr(entry, "runtime_data", None)
+            api = getattr(rt, "api", None)
+            if api is None:
+                continue
+            try:
+                net = await api.get_network_status()
+            except Exception:  # noqa: BLE001 – gateway offline: keep checking the others
+                continue
+            if str(net.get("local_ip") or "") == host:
+                return self.async_abort(reason="already_configured")
+
+        await self.async_set_unique_id(host)
         self._abort_if_unique_id_configured()
         self._host = host
         self.context["title_placeholders"] = {"host": host}

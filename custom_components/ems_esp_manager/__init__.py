@@ -23,6 +23,7 @@ from .dashboard import async_register_dashboard, async_remove_dashboard
 from .log import EmsEspLog
 from .buslog import async_setup_buslog
 from .mqtt import async_setup_mqtt
+from .ntp import async_setup_ntp
 from .schedule import async_setup_schedule
 from .panel import async_remove_panel, async_setup_panel
 from .names import lang
@@ -56,6 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EmsEspConfigEntry) -> bo
     await _async_setup_panel(hass, entry)
     async_setup_buslog(hass)
     async_setup_mqtt(hass)
+    async_setup_ntp(hass)
 
     await status.async_config_entry_first_refresh()
     await releases.async_load_cache()
@@ -92,6 +94,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: EmsEspConfigEntry) -> bo
             if isinstance(tx_mode, int):
                 runtime.tx_mode = tx_mode
                 info.append(f"Tx-Modus {TX_MODES.get(tx_mode, tx_mode)}")
+            if isinstance(settings.get("locale"), str):
+                runtime.locale = settings["locale"]
+                info.append(f"Sprache {runtime.locale}")
+            if isinstance(settings.get("analog_enabled"), bool):
+                runtime.extra["analog_enabled"] = settings["analog_enabled"]
         except EmsEspError as err:
             _LOGGER.debug("EMS-ESP settings not readable: %s", err)
         try:
@@ -137,6 +144,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: EmsEspConfigEntry) -> bo
             runtime.tx_mode = settings["tx_mode"]
         if isinstance(settings.get("ems_bus_id"), int):
             runtime.bus_id = settings["ems_bus_id"]
+        if isinstance(settings.get("locale"), str):
+            runtime.locale = settings["locale"]
+        if isinstance(settings.get("analog_enabled"), bool):
+            runtime.extra["analog_enabled"] = settings["analog_enabled"]
     except EmsEspError:
         pass
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

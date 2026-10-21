@@ -41,7 +41,8 @@
     "abort": {
       "already_configured": "This EMS-ESP is already configured.",
       "reauth_successful": "Re-authentication successful.",
-      "reconfigure_successful": "Settings saved."
+      "reconfigure_successful": "Settings saved.",
+      "not_ipv4_address": "Only IPv4 addresses are offered."
     }
   },
   "entity": {
@@ -63,6 +64,9 @@
       },
       "clear_log": {
         "name": "Clear log"
+      },
+      "gateway_sensors": {
+        "name": "Create gateway sensors"
       }
     },
     "select": {
@@ -77,6 +81,9 @@
       },
       "tx_mode": {
         "name": "Tx-Modus (Senden)"
+      },
+      "locale": {
+        "name": "Language of the EMS-ESP values"
       }
     },
     "binary_sensor": {
@@ -106,6 +113,9 @@
       "num_devices": {
         "name": "Number of EMS devices"
       },
+      "network": {
+        "name": "Network connection"
+      },
       "wifi_rssi": {
         "name": "Wi-Fi signal"
       },
@@ -120,6 +130,11 @@
       },
       "plant": {
         "name": "Detected plant"
+      }
+    },
+    "switch": {
+      "analog_enabled": {
+        "name": "Analog sensors"
       }
     }
   },

@@ -13,6 +13,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .buslog import URL_LOG_CARD
 from .mqtt import URL_MQTT_CARD
+from .ntp import URL_NTP_CARD
 from .const import DOMAIN, URL_PANEL, URL_PANEL_ADMIN
 from .names import STATES, lang
 from .registry import all_devices, all_entities
@@ -30,6 +31,7 @@ TXT = {
         "values": "Messwerte",
         "webui": "Web-Oberfläche",
         "mqtt": "MQTT",
+        "clock": "Uhrzeit",
         "firmware": "Firmware",
         "system": "System",
         "plant": "Erkannte Anlage",
@@ -39,6 +41,9 @@ TXT = {
         "install_confirm": "EMS-ESP lädt die neue Firmware von GitHub, installiert sie und startet neu "
         "(ca. 1–3 Minuten). Die Heizung läuft dabei weiter. Fortfahren?",
         "restart_confirm": "EMS-ESP jetzt neu starten?",
+        "gwsens_confirm": "Analogsensoren einschalten und die eingebauten Sensoren des BBQKees E32 V2.2 "
+        "anlegen (Core_voltage, Supply_voltage, Gateway_temperature)? Ist das Board-Profil falsch, "
+        "wird es korrigiert und EMS-ESP startet neu.",
         "versions": "Bestimmte Version installieren",
         "versions_list": "Verfügbare stabile Versionen",
         "col_version": "Version",
@@ -77,6 +82,7 @@ TXT = {
         "values": "Values",
         "webui": "Web UI",
         "mqtt": "MQTT",
+        "clock": "Clock",
         "firmware": "Firmware",
         "system": "System",
         "plant": "Detected plant",
@@ -86,6 +92,9 @@ TXT = {
         "install_confirm": "EMS-ESP will download the new firmware from GitHub, flash it and restart "
         "(about 1–3 minutes). Heating keeps running. Continue?",
         "restart_confirm": "Restart EMS-ESP now?",
+        "gwsens_confirm": "Switch on analog sensors and create the built-in sensors of the BBQKees E32 V2.2 "
+        "(Core_voltage, Supply_voltage, Gateway_temperature)? If the board profile is wrong it is "
+        "corrected and EMS-ESP restarts.",
         "versions": "Install a specific version",
         "versions_list": "Available stable versions",
         "col_version": "Version",
@@ -356,17 +365,30 @@ def build_dashboard(hass: HomeAssistant) -> dict[str, Any]:
                 "hardware",
                 "bus_status",
                 "num_devices",
+                "network",
                 "wifi_rssi",
                 "uptime",
             )
             if k in own_by_key
         ]
+        lan_text = STATES[lang_key]["lan"]
+
+        def sys_row(entity_id: str) -> dict[str, Any]:
+            row = {"entity": entity_id, "name": own_name(entity_id)}
+            if entity_id == own_by_key.get("wifi_rssi") and "network" in own_by_key:
+                # Wi-Fi signal only when the gateway is on Wi-Fi (not on LAN cable)
+                return {
+                    "type": "conditional",
+                    "conditions": [{"entity": own_by_key["network"], "state_not": lan_text}],
+                    "row": row,
+                }
+            return row
         sys_cards: list[dict[str, Any]] = [
             {"type": "heading", "heading": t["system"], "icon": "mdi:information-outline"},
             {
                 "type": "entities",
                 "state_color": True,
-                "entities": [{"entity": i, "name": own_name(i)} for i in rows],
+                "entities": [sys_row(i) for i in rows],
             },
         ]
         if "plant" in own_by_key:
@@ -393,7 +415,20 @@ def build_dashboard(hass: HomeAssistant) -> dict[str, Any]:
                     ),
                 }
             )
+        if entity_id := own_by_key.get("analog_enabled"):
+            sys_cards.append(
+                {
+                    "type": "tile",
+                    "entity": entity_id,
+                    "name": own_name(entity_id),
+                    "icon": "mdi:sine-wave",
+                    "tap_action": {"action": "toggle"},
+                    "icon_tap_action": {"action": "toggle"},
+                    "grid_options": {"columns": 12},
+                }
+            )
         for card in (
+            tile_button("gateway_sensors", "mdi:chip", t["gwsens_confirm"]),
             tile_button("fetch_values", "mdi:database-refresh"),
             tile_button("restart", "mdi:restart", t["restart_confirm"]),
         ):
@@ -502,6 +537,15 @@ def build_dashboard(hass: HomeAssistant) -> dict[str, Any]:
             "path": "mqtt",
             "type": "panel",
             "cards": [{"type": "iframe", "url": URL_MQTT_CARD}],
+        }
+    )
+    # clock / NTP of EMS-ESP (form page, admin only)
+    views.append(
+        {
+            "title": t["clock"],
+            "path": "uhrzeit",
+            "type": "panel",
+            "cards": [{"type": "iframe", "url": URL_NTP_CARD}],
         }
     )
 

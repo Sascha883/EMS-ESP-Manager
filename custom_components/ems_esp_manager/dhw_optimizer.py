@@ -61,6 +61,19 @@ def _hm(h: float) -> str:
     return f"{hh:02d}:{mm:02d}"
 
 
+
+def _comfort_option(mode, saved: str) -> str:
+    """Option text for "Komfort" in the current EMS-ESP language.
+
+    The option is saved as text (e.g. "comfort"); after switching the EMS-ESP
+    language it is "Komfort". EMS-ESP dhw mode order (enum_wwMode4):
+    off, eco+, eco, comfort, auto -> index 3.
+    """
+    opts = list((mode.attributes.get("options") or []) if mode else [])
+    if not opts or saved in opts:
+        return saved
+    return opts[3] if len(opts) == 5 else saved
+
 class DhwOptimizer:
     def __init__(self, hass: HomeAssistant, mgr) -> None:
         self.hass = hass
@@ -175,8 +188,9 @@ class DhwOptimizer:
         prev = {"mode": mode.state if mode else None, "stop": _f(stop.state)}
         mode_changed = False
         try:
-            if mode and cfg["comfort_option"] and mode.state != cfg["comfort_option"]:
-                await self._set("select", cfg["mode_entity"], cfg["comfort_option"])
+            comfort = _comfort_option(mode, cfg["comfort_option"])
+            if mode and comfort and mode.state != comfort:
+                await self._set("select", cfg["mode_entity"], comfort)
                 mode_changed = True
             await self._set("number", cfg["stop_entity"], cfg["target"])
         except Exception as err:  # noqa: BLE001

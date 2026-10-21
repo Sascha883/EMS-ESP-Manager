@@ -120,6 +120,21 @@ _CACHE: dict[str, object] = {"t": 0.0, "ids": None, "fail": 0.0}
 _FAIL_RETRY = 60  # s – gateway unreachable: do not ask again on every panel request
 
 
+async def _present_devices(api) -> tuple[str, ...]:
+    """Device types (of EMS_DEVICES) EMS-ESP actually detected.
+
+    Asking EMS-ESP for a device the plant does not have (e.g. /api/mixer on a
+    heat pump without mixer module) is answered with an error and leaves a
+    warning "Command failed: unknown device mixer" in the EMS-ESP log – so only
+    the detected types are asked (all of them if the plant is not known).
+    """
+    devs = await ems_devices(api)  # cached 10 min
+    if not devs:
+        return EMS_DEVICES
+    types = {str(d.get("type", "")).lower() for d in devs}
+    return tuple(d for d in EMS_DEVICES if d in types) or EMS_DEVICES
+
+
 def _flatten(device: str, data: dict) -> set[str]:
     out: set[str] = set()
     for key, val in data.items():
@@ -141,7 +156,7 @@ async def ems_value_ids(api) -> list[str] | None:
         return _CACHE["ids"]  # type: ignore[return-value]  # last known list (or None)
     ids: set[str] = set()
     ok = False
-    for dev in EMS_DEVICES:
+    for dev in await _present_devices(api):
         for path in (f"/api/{dev}/values", f"/api/{dev}"):
             try:
                 status, data = await api._request("GET", path)  # noqa: SLF001
@@ -166,7 +181,7 @@ async def ems_entities(api) -> dict[str, dict] | None:
     """Object id (device[_tag]_short) -> {v, w, r, t, min, max, u}; None = EMS-ESP not reachable."""
     out: dict[str, dict] = {}
     ok = False
-    for dev in EMS_DEVICES:
+    for dev in await _present_devices(api):
         try:
             status, data = await api._request("GET", f"/api/{dev}/entities")  # noqa: SLF001
         except Exception:  # noqa: BLE001 - gateway not reachable: no need to try the other devices
