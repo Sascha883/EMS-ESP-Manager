@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.jpg" alt="EMS-ESP Manager – Haustechnik aus der Praxis" width="100%">
+  <img src="docs/images/banner.png" alt="EMS-ESP Manager – Haustechnik aus der Praxis" width="100%">
 </p>
 
 # EMS-ESP Manager für Home Assistant
