@@ -1,0 +1,184 @@
+{
+  "config": {
+    "flow_title": "EMS-ESP ({host})",
+    "step": {
+      "user": {
+        "title": "Welche Heizung?",
+        "description": "Hersteller wählen. Bosch / Buderus wird über das EMS-ESP-Gateway angebunden, Samsung EHS über die HACS-Integration EHS Sentinel.",
+        "menu_options": {
+          "bosch": "Bosch / Buderus (EMS-ESP)",
+          "samsung": "Samsung EHS (EHS Sentinel)"
+        }
+      },
+      "bosch": {
+        "title": "EMS-ESP verbinden",
+        "description": "IP-Adresse (oder Hostname) des EMS-ESP und ein Benutzer mit Admin-Rechten. Standard ab Werk: admin / admin.",
+        "data": {
+          "host": "IP-Adresse / Hostname",
+          "username": "Benutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "host": "z. B. 192.168.178.42 oder ems-esp.local",
+          "username": "Benutzer muss Admin sein (für Firmware-Update und Neustart)"
+        }
+      },
+      "samsung": {
+        "title": "Samsung EHS",
+        "description": "Die Werte kommen aus der HACS-Integration **EHS Sentinel** (RS485-Adapter an der Wärmepumpe). Der Manager ergänzt das Panel „Samsung EHS“ in der Seitenleiste, das Protokoll von EHS Sentinel und die Heizstab-Regelung.\n\n{found}"
+      },
+      "reauth_confirm": {
+        "title": "EMS-ESP Anmeldung erneuern",
+        "description": "Die Anmeldung am EMS-ESP ist nicht mehr gültig. Bitte Zugangsdaten erneut eingeben.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      },
+      "reconfigure": {
+        "title": "EMS-ESP ändern",
+        "data": {
+          "host": "IP-Adresse / Hostname",
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "EMS-ESP nicht erreichbar. IP-Adresse prüfen.",
+      "invalid_auth": "Benutzername oder Passwort falsch.",
+      "not_admin": "Dieser Benutzer hat keine Admin-Rechte im EMS-ESP.",
+      "unknown": "Unerwarteter Fehler."
+    },
+    "abort": {
+      "already_configured": "Dieser EMS-ESP bzw. Samsung EHS ist bereits eingerichtet.",
+      "reauth_successful": "Anmeldung erneuert.",
+      "reconfigure_successful": "Einstellungen gespeichert.",
+      "not_ipv4_address": "Es werden nur IPv4-Adressen angeboten.",
+      "no_reconfigure": "Samsung EHS hat keine Verbindungsdaten – Änderungen bitte in EHS Sentinel vornehmen."
+    }
+  },
+  "entity": {
+    "button": {
+      "restart": {
+        "name": "EMS-ESP neu starten"
+      },
+      "fetch_values": {
+        "name": "Alle Werte neu abrufen"
+      },
+      "check_updates": {
+        "name": "Updates prüfen"
+      },
+      "install_latest": {
+        "name": "Update installieren"
+      },
+      "install_selected": {
+        "name": "Version installieren"
+      },
+      "clear_log": {
+        "name": "Log leeren"
+      },
+      "gateway_sensors": {
+        "name": "Gateway-Sensoren anlegen"
+      }
+    },
+    "select": {
+      "stable_version": {
+        "name": "Version auswählen"
+      },
+      "watch_mode": {
+        "name": "Bus-Mitschnitt"
+      },
+      "log_level": {
+        "name": "Log-Level"
+      },
+      "tx_mode": {
+        "name": "Tx-Modus (Senden)"
+      },
+      "locale": {
+        "name": "Sprache der EMS-ESP-Werte"
+      }
+    },
+    "binary_sensor": {
+      "update_available": {
+        "name": "Firmware-Status"
+      }
+    },
+    "sensor": {
+      "system_state": {
+        "name": "Systemzustand"
+      },
+      "firmware_installed": {
+        "name": "Installierte Firmware"
+      },
+      "firmware_latest": {
+        "name": "Neueste Firmware"
+      },
+      "update_progress": {
+        "name": "Update-Fortschritt"
+      },
+      "hardware": {
+        "name": "Hardware"
+      },
+      "bus_status": {
+        "name": "EMS-Bus"
+      },
+      "num_devices": {
+        "name": "Anzahl EMS-Geräte"
+      },
+      "network": {
+        "name": "Netzwerkanschluss"
+      },
+      "wifi_rssi": {
+        "name": "WLAN-Signal"
+      },
+      "uptime": {
+        "name": "Laufzeit seit Neustart"
+      },
+      "free_heap": {
+        "name": "Freier Speicher"
+      },
+      "bus_log": {
+        "name": "Bus-Log"
+      },
+      "plant": {
+        "name": "Erkannte Anlage"
+      }
+    },
+    "switch": {
+      "analog_enabled": {
+        "name": "Analogsensoren"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EMS-ESP Dashboard",
+        "description": "Legt fest, wer das Dashboard „EMS-ESP“ und das Bosch-HMI-800-Panel in der Seitenleiste sieht.\n\n**Zugriff von außen (Wandtablet, Safari, Kiosk):** Das Panel braucht dafür einen langlebigen Zugriffstoken aus Home Assistant. Die Integration kann diesen Token nicht selbst anlegen – er ist deine Freigabe für den Zugriff.\n1. {token_help}\n2. Token unten einfügen und **Absenden**.\n3. **Konfigurieren** erneut öffnen und die **Kiosk-Adresse** kopieren.",
+        "data": {
+          "In Sidebar Benutzer anzeigen": "In Sidebar Benutzer anzeigen",
+          "In Sidebar Admin anzeigen": "In Sidebar Admin anzeigen",
+          "Bosch HMI 800: Token für Zugriff von außen (optional)": "Bosch HMI 800: Langlebiger Zugriffstoken aus HA (für Zugriff von außen)",
+          "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)": "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)",
+          "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)"
+        },
+        "data_description": {
+          "In Sidebar Benutzer anzeigen": "Aus: kein Eintrag in der Seitenleiste. Das Dashboard bleibt für Administratoren unter /ems-esp erreichbar.",
+          "In Sidebar Admin anzeigen": "An: nur Administratoren sehen das Dashboard. Benutzer ohne Administratorrechte sehen es nicht und können es auch nicht öffnen.",
+          "Bosch HMI 800: Token für Zugriff von außen (optional)": "Nur den Token aus HA → Profil → Sicherheit → Langlebige Zugriffstoken einfügen. Der Kiosk-Schlüssel ist kein Token. Wird beim Speichern geprüft.",
+          "Bosch HMI 800: Kiosk-Adresse (nur zum Kopieren)": "Diese Adresse auf dem Tablet öffnen. Sie verwendet immer den Token oben – ein Token in den Panel-Einstellungen wird dabei nicht benutzt.",
+          "Bosch HMI 800: neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "Erzeugt nur einen neuen Schlüssel für die Kiosk-Adresse (z. B. wenn ein Gerät verloren ging). Erzeugt keinen Token."
+        }
+      },
+      "samsung": {
+        "title": "Samsung-EHS-Panel",
+        "description": "Festlegen, wer das Samsung-EHS-Panel in der Seitenleiste sieht.\n\n**Zugriff von außen (Wandtablet, Kiosk):** in Home Assistant einen langlebigen Zugriffstoken erstellen (Profil → Sicherheit → Langlebige Zugriffstoken), unten einfügen und speichern. Danach **Konfigurieren** erneut öffnen und die **Kiosk-Adresse** kopieren."
+      }
+    },
+    "error": {
+      "panel_token_invalid": "Home Assistant kennt diesen Token nicht. Bitte in HA unter Profil → Sicherheit → Langlebige Zugriffstoken einen neuen Token erstellen und den vollständigen Text (beginnt mit „eyJ…“) einfügen.",
+      "panel_token_not_long_lived": "Das ist kein langlebiger Token (läuft nach kurzer Zeit ab). Bitte unter Profil → Sicherheit → Langlebige Zugriffstoken einen Token erstellen."
+    }
+  }
+}
