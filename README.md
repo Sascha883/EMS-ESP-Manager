@@ -7,14 +7,22 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 [![Release](https://img.shields.io/github/v/release/Sascha883/EMS-ESP-Manager)](https://github.com/Sascha883/EMS-ESP-Manager/releases)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.2%2B-41BDF5.svg)](https://www.home-assistant.io)
+[![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FSascha883%2FEMS-ESP-Manager%2Fmain%2Fcustom_components%2Fems_esp_manager%2Fmanifest.json&query=%24.version&label=Version&color=d32f2f)](custom_components/ems_esp_manager/manifest.json)
 [![Lizenz](https://img.shields.io/badge/Lizenz-PolyForm%20Noncommercial-lightgrey.svg)](LICENSE)
 
-Custom-Integration, mit der du ein [EMS-ESP](https://github.com/emsesp/EMS-ESP32)-Gateway (z. B. von BBQKees) komplett aus Home Assistant bedienst – ohne die EMS-ESP-Weboberfläche. Dazu gibt es ein **Bosch-HMI-800-Panel**, das sich wie das Original-Display der Wärmepumpe bedienen lässt, und **EMS-Regelfunktionen** wie die Warmwasseroptimierung mit PV-Strom.
+Custom-Integration für Home Assistant, mit der du deine Wärmepumpe so bedienst wie am Original-Display – direkt in Home Assistant, auf dem Wand-Tablet oder unterwegs.
 
-Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
+| | **Bosch / Buderus** | **Samsung EHS** *(ab v1.13)* |
+|---|---|---|
+| **Datenquelle** | [EMS-ESP](https://github.com/emsesp/EMS-ESP32)-Gateway (z. B. BBQKees) | HACS-Integration **EHS Sentinel** (RS485) |
+| **Panel** | Bosch HMI 800 | Samsung EHS – gleiche Menüs, Samsung-Farben |
+| **Gateway-Verwaltung** | Firmware, Bus-Log, MQTT, Uhrzeit, Sensoren | Verbindungsstatus und Protokoll von EHS Sentinel |
+| **EMS-Regelung** | Warmwasseroptimierung, Heizstab | Heizstab |
+
+Der Hersteller wird bei der Einrichtung gewählt. Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800** und einer **Samsung EHS Split-Anlage**.
 
 > [!NOTE]
-> Kein offizielles Projekt von EMS-ESP, BBQKees oder Bosch. Nutzung auf eigene Gefahr – Änderungen an Wärmepumpen-Parametern nur mit Fachkenntnis.
+> Kein offizielles Projekt von EMS-ESP, BBQKees, Bosch, Samsung, EHS Sentinel oder novolto. Nutzung auf eigene Gefahr – Änderungen an Wärmepumpen-Parametern nur mit Fachkenntnis.
 
 <p align="center">
   <img src="docs/images/vorschau.gif" alt="Vorschau Bosch HMI 800 Panel" width="640">
@@ -25,6 +33,10 @@ Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
 ## Inhalt
 
 - [Funktionen](#funktionen)
+  - [Bosch HMI 800 Panel](#bosch-hmi-800-panel)
+  - [Samsung EHS Panel](#samsung-ehs-panel)
+  - [EMS-Regelung](#ems-regelung)
+  - [Manager-Dashboard](#manager-dashboard-ems-esp)
 - [Screenshots](#screenshots)
 - [Voraussetzungen](#voraussetzungen)
 - [Installation](#installation)
@@ -50,14 +62,29 @@ Entwickelt und getestet an einer **Bosch Compress CS5800i mit UI 800**.
 - **Störung und Wartungsmeldung zurücksetzen** direkt im Panel.
 - **Automatische Entitäts-Zuordnung** – funktioniert mit allen EMS-ESP-Entity-ID-Formaten (Kurz- und Langnamen, mit Präfix, umbenannt), inklusive Prüfung Lesen/Schreiben. Werte, die in HA fehlen, lassen sich mit einem Klick anlegen.
 
+### Samsung EHS Panel
+- **Gleiche Menüführung wie das Bosch-Panel**, Farben angelehnt an das Samsung-Bedienteil (hell, Samsung-Blau als Akzent) – Eintrag **„Samsung EHS“** in der Seitenleiste.
+- Daten aus der HACS-Integration **EHS Sentinel**; Samsung-Bezeichnungen und FSV-Einstellungen, wo der Bosch-Text nicht passt.
+- Heizkurve als Wassergesetz mit Verschiebung, Zone 1, Warmwasser, Energie, Systemübersicht.
+- **Service → Verbindung & Protokoll:** Verbindungsstatus und Log-Mitschnitt von EHS Sentinel.
+- Kiosk-Adresse, Fachbetrieb-Info und Heizstab-Regelung wie beim Bosch-Panel.
+- Ersetzt die frühere separate Integration „Samsung EHS Panel“ – eigene Zuordnungen werden beim ersten Öffnen übernommen.
+
 ### EMS-Regelung
 Regelfunktionen, die in Home Assistant laufen – auch wenn das Panel geschlossen ist.
-- **Warmwasseroptimierung:** Ist viel Sonne zu erwarten, wird der Speicher einmal am Tag höher aufgeheizt (Standard 60 °C), damit die Wärmepumpe mit eigenem PV-Strom läuft.
+- **Heizstab (novolto P2300(G) / P3000(G))** über die lokale MQTT-API des Geräts – für Bosch und Samsung:
+  - Betriebsarten **Aus**, **Manuell** (feste Leistung) und **PV-Überschuss** (Leistung = Überschuss + aktuelle Heizstab-Leistung − Reserve).
+  - Einstellbar: Reserve, Mindest-/Höchstleistung, Schrittweite, Regelintervall, Ausschaltverzögerung, Zieltemperatur und Hysterese.
+  - Optional **Freigabe-Entität** (z. B. Schalter oder Binärsensor) und **Akku-Ladestand** als Bedingung (Standard: ab 80 %).
+  - Fällt der Überschusswert aus (älter als 5 min) oder wird Home Assistant beendet, schaltet die Regelung den Heizstab ab.
+- **Warmwasseroptimierung** *(Bosch)*: Ist viel Sonne zu erwarten, wird der Speicher einmal am Tag höher aufgeheizt (Standard 60 °C), damit die Wärmepumpe mit eigenem PV-Strom läuft.
   - Vorhersage über eine **PV-Prognose**-Entität (kWh, z. B. Forecast.Solar, Solcast) oder eine **Wetter**-Entität (Bewölkung).
   - Optional zusätzlich **PV-Überschuss** (W/kW).
   - Zeitfenster und Zieltemperatur einstellbar; danach werden Betriebsart und Stopptemperatur automatisch zurückgesetzt.
 
 ### Manager-Dashboard „EMS-ESP“
+*Nur Bosch / Buderus (EMS-ESP-Gateway).*
+
 - **System & Firmware** – Status, Bus, Netzwerkanschluss (LAN/WLAN), WLAN-Signal, Laufzeit; Firmware-Updates und Wechsel auf ältere stabile Versionen direkt aus HA.
 - **Gateway-Sensoren** – Analogsensoren ein/aus; Kernspannung, Versorgungsspannung und Gateway-Temperatur beim BBQKees Gateway E32 V2.2 per Taste anlegen.
 - **Sprache der EMS-ESP-Werte** umschalten (z. B. Deutsch) – Entitäts-IDs bleiben gleich.
@@ -68,7 +95,7 @@ Regelfunktionen, die in Home Assistant laufen – auch wenn das Panel geschlosse
 - **MQTT** – alle MQTT-Einstellungen des EMS-ESP (Broker, Discovery, Entity-ID-Format, Sendeintervalle) mit Statusanzeige.
 - **Web-Oberfläche** des EMS-ESP eingebettet.
 
-📄 Ausführliche Anleitung: [Installationsanleitung (PDF, Stand v1.10.2)](docs/EMS-ESP-Manager_Installationsanleitung_v1.10.2.pdf)
+📄 Ausführliche Anleitung: [Installationsanleitung (PDF, Stand v1.10.2 – Bosch)](docs/EMS-ESP-Manager_Installationsanleitung_v1.10.2.pdf)
 
 ---
 
@@ -103,9 +130,10 @@ Regelfunktionen, die in Home Assistant laufen – auch wenn das Panel geschlosse
 | | |
 |---|---|
 | **Home Assistant** | 2025.2 oder neuer (eigenes Integrations-Logo ab 2026.3) |
-| **EMS-ESP** | 3.7 oder neuer (getestet mit 3.8.x), Zugang mit Admin-Benutzer |
-| **MQTT** | MQTT-Integration in Home Assistant, EMS-ESP mit aktivierter HA-Discovery |
 | **Verlauf** | Recorder aktiv (Standard) – für Tageswerte und Warmwasser-Verlauf |
+| **Bosch / Buderus** | EMS-ESP 3.7 oder neuer (getestet mit 3.8.x), Admin-Zugang; MQTT-Integration in HA, EMS-ESP mit aktivierter HA-Discovery |
+| **Samsung EHS** | HACS-Integration **EHS Sentinel**, eingerichtet und verbunden (RS485-Adapter an der Wärmepumpe) |
+| **Heizstab** *(optional)* | novolto P2300(G) / P3000(G), am MQTT-Broker von Home Assistant angemeldet; Entität für PV-Überschuss (W oder kW) |
 
 ---
 
@@ -127,24 +155,30 @@ Regelfunktionen, die in Home Assistant laufen – auch wenn das Panel geschlosse
 
 Über HACS aktualisieren (oder den Ordner ersetzen), Home Assistant neu starten und das Panel einmal neu laden (Strg+F5). Zuordnung, Heizkreis-Namen, Kiosk-Schlüssel, Programmzeiten und die Einstellungen der EMS-Regelung bleiben erhalten.
 
+> [!TIP]
+> Wer bisher die separate Integration **Samsung EHS Panel** nutzt: Nach dem Update den EMS-ESP Manager mit *Samsung EHS* hinzufügen, dann die alte Integration unter Geräte & Dienste löschen und in HACS entfernen.
+
 ---
 
 ## Einrichtung
 
-1. **Einstellungen → Geräte & Dienste → Integration hinzufügen → „EMS-ESP Manager“**. Das EMS-ESP wird per Zeroconf meist automatisch gefunden.
-2. **Adresse** des EMS-ESP (IP oder `ems-esp.local`), **Benutzer** und **Passwort** eines EMS-ESP-Admins eingeben.
+1. **Einstellungen → Geräte & Dienste → Integration hinzufügen → „EMS-ESP Manager“**.
+2. **Welche Heizung?** – *Bosch / Buderus* oder *Samsung EHS* wählen.
+   - **Bosch / Buderus:** Adresse des EMS-ESP (IP oder `ems-esp.local`), Benutzer und Passwort eines EMS-ESP-Admins. Das Gateway wird per Zeroconf meist automatisch gefunden.
+   - **Samsung EHS:** keine Zugangsdaten nötig – die Werte kommen aus EHS Sentinel. Fehlt EHS Sentinel, erscheint ein Hinweis.
 3. Unter **Konfigurieren** einstellen:
-   - Seitenleisten-Einträge für das Dashboard und das Panel (für alle oder nur Admins).
-   - Token für den **Kiosk-Zugriff** auf das Panel (z. B. Wand-Tablet ohne Anmeldung).
+   - Seitenleisten-Einträge (für alle oder nur Admins).
+   - **Zugriff von außen / Kiosk** (Wand-Tablet ohne Anmeldung): in HA unter *Profil → Sicherheit → Langlebige Zugriffstoken* einen Token erstellen, einfügen, speichern – danach **Konfigurieren** erneut öffnen und die **Kiosk-Adresse** kopieren.
    - **Fachbetrieb** (Name, Adresse, Telefon) für die Info-Seite des Panels.
+4. **Heizstab** und **Warmwasseroptimierung** im Panel unter **EMS-Regelung** einrichten.
 
-Danach erscheinen in der Seitenleiste **„EMS-ESP“** (Dashboard) und **„Bosch HMI 800“** (Panel).
+In der Seitenleiste erscheinen danach **„EMS-ESP“** (Dashboard) und **„Bosch HMI 800“** bzw. **„Samsung EHS“** (Panel).
 
 ---
 
 ## Entitäts-Namen und EMS-ESP-Versionen
 
-Das Panel findet die passenden Entitäten automatisch – egal, welches **Entity-ID-Format** im EMS-ESP eingestellt ist:
+*Bosch / Buderus.* Das Panel findet die passenden Entitäten automatisch – egal, welches **Entity-ID-Format** im EMS-ESP eingestellt ist:
 
 | Format im EMS-ESP | Beispiel |
 |---|---|
@@ -175,14 +209,17 @@ Eigene Zuordnungen im Reiter **„Zuordnung“** haben immer Vorrang.
 
 Bitte ein [Issue](https://github.com/Sascha883/EMS-ESP-Manager/issues) anlegen mit:
 
-- Version des EMS-ESP Managers und von EMS-ESP.
-- Regler / Wärmepumpe (z. B. UI 800, CS5800i).
+- Version des EMS-ESP Managers und von EMS-ESP bzw. EHS Sentinel.
+- Hersteller, Regler / Wärmepumpe (z. B. UI 800, CS5800i, Samsung EHS Split).
 - Screenshot der betroffenen Seite.
 - Bei fehlenden Werten: Ausgabe dieser Vorlage (Entwicklerwerkzeuge → Template):
   ```
   {{ integration_entities('mqtt') | select('search', 'thermostat|boiler') | list }}
   ```
 - Bei Bus-Themen: Download aus dem Reiter **Bus-Log** (enthält Manager-Version und Geräteliste).
+- Samsung: Mitschnitt aus **Service → Verbindung & Protokoll**.
+
+Das Formular unter *New issue* fragt diese Punkte ab.
 
 ---
 

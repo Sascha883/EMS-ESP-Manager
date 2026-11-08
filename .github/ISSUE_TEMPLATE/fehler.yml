@@ -1,0 +1,41 @@
+name: Fehler melden
+description: Etwas funktioniert nicht wie erwartet
+labels: [bug]
+body:
+  - type: dropdown
+    id: hersteller
+    attributes:
+      label: Hersteller
+      options: [Bosch / Buderus (EMS-ESP), Samsung EHS (EHS Sentinel)]
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Version EMS-ESP Manager
+      placeholder: z. B. 1.13.0
+    validations: {required: true}
+  - type: input
+    id: quelle
+    attributes:
+      label: Version EMS-ESP bzw. EHS Sentinel
+      placeholder: z. B. EMS-ESP 3.8.1
+  - type: input
+    id: anlage
+    attributes:
+      label: Regler / Wärmepumpe
+      placeholder: z. B. UI 800, CS5800i
+  - type: input
+    id: ha
+    attributes:
+      label: Home-Assistant-Version
+      placeholder: z. B. 2026.11.0
+  - type: textarea
+    id: fehler
+    attributes:
+      label: Was passiert – und was hättest du erwartet?
+    validations: {required: true}
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshot, Bus-Log oder Protokoll
+      description: Screenshot der betroffenen Seite, Download aus dem Reiter „Bus-Log“ (Bosch) oder „Service → Verbindung & Protokoll“ (Samsung). Dateien einfach hier hineinziehen.

@@ -1,0 +1,13 @@
+name: Idee / Wunsch
+description: Vorschlag für eine neue Funktion
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idee
+    attributes:
+      label: Was soll der Manager können?
+    validations: {required: true}
+  - type: input
+    id: anlage
+    attributes:
+      label: Hersteller, Regler / Wärmepumpe
