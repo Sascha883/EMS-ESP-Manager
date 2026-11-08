@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau (https://haustechnik-matheis.de)
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Kommerzielle Nutzung nur mit schriftlicher Lizenz des Urhebers. Siehe LICENSE.
 """EMS-Regelung → Warmwasseroptimierung.
 
 Heats the hot-water tank to a higher temperature (default 60 °C) when the sun is

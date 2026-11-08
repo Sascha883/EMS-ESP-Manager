@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau (https://haustechnik-matheis.de)
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Kommerzielle Nutzung nur mit schriftlicher Lizenz des Urhebers. Siehe LICENSE.
 """Built-in system sensors of the BBQKees Gateway E32 V2.2.
 
 The E32 V2.2 measures its own core voltage (GPIO 39), supply voltage (GPIO 36)

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau (https://haustechnik-matheis.de)
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Kommerzielle Nutzung nur mit schriftlicher Lizenz des Urhebers. Siehe LICENSE.
 """Firmware installation (shared by the update entity and the 'install selected version' button)."""
 
 from __future__ import annotations

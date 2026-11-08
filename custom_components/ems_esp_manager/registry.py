@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau (https://haustechnik-matheis.de)
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Kommerzielle Nutzung nur mit schriftlicher Lizenz des Urhebers. Siehe LICENSE.
 """Read all entries of the HA device / entity registry – independent of the HA version.
 
 Home Assistant is moving the registries away from dict-like access:

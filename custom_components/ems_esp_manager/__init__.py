@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau (https://haustechnik-matheis.de)
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Kommerzielle Nutzung nur mit schriftlicher Lizenz des Urhebers. Siehe LICENSE.
 """EMS-ESP Manager: firmware updates, status and a ready-made dashboard for EMS-ESP.
 
 Since v1.13 the manufacturer is chosen at the first setup:

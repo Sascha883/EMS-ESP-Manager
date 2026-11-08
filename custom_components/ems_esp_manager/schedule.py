@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau (https://haustechnik-matheis.de)
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Kommerzielle Nutzung nur mit schriftlicher Lizenz des Urhebers. Siehe LICENSE.
 """Weekly switch times (Zeitprogramm) of the Bosch UI 800 / BC400 controller.
 
 EMS-ESP does not know this telegram yet (shows "?(0x02C3)"), found in Sascha's

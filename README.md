@@ -195,6 +195,12 @@ Bitte ein [Issue](https://github.com/Sascha883/EMS-ESP-Manager/issues) anlegen m
 
 Kommerzielle Nutzung nur mit gesonderter Lizenz – Anfrage über [haustechnik-matheis.de](https://haustechnik-matheis.de).
 
+Kunden von Sascha Matheis Haustechnik erhalten im Rahmen ihres Auftrags eine Nutzungslizenz für die bei ihnen installierte Anlage.
+
+Weitergabe, auch in veränderter Form, nur mit dem vollständigen Lizenztext und dem Copyright-Hinweis. Das Entfernen des Urheberhinweises oder das Ausgeben des Codes als eigenes Werk ist nicht gestattet.
+
+© 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau – [haustechnik-matheis.de](https://haustechnik-matheis.de)
+
 Die Nutzung erfolgt auf eigene Gefahr und ohne jegliche Gewährleistung oder Haftung.
 
 ---

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Sascha Matheis, Sascha Matheis Haustechnik, Espenau (https://haustechnik-matheis.de)
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Kommerzielle Nutzung nur mit schriftlicher Lizenz des Urhebers. Siehe LICENSE.
 """Samsung EHS: websocket commands of the panel – status and logs of EHS Sentinel.
 
 Taken over from the separate "Samsung EHS Panel" (v1.1.1); the commands are
