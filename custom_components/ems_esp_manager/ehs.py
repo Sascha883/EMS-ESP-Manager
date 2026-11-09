@@ -1350,7 +1350,19 @@ function sStart(){
     <div class="col"><div class="card"><div class="cap">EHS Sentinel</div><div id="o_ehs">${ehsRows()}</div></div></div></div>`; }
 function sWerte(kind){
   return `<div class="seg"><button data-hash="einstellungen" class="${kind==='settings'?'on':''}">Einstellungen</button><button data-hash="messwerte" class="${kind==='values'?'on':''}">Messwerte</button></div>`+vGroups(kind); }
-function sSystem(){ return sysNav()+(SYSV==='wpa'?vWpa():sSystemBody()); }
+// v1.24.1: Samsung „System“ wie Bosch: Kacheln oben + Ausklappmenü untereinander (WP-Auswertung als Abschnitt statt Umschalter)
+function sSystem(){ return sSystemBody(); }
+function sSysTiles(){
+  const d=ST||{}, t=(k,ic,l,v,sub,c)=>`<div class="tile lnk ${c||''}" data-btile="${k}"><div class="tl"><span class="ti">${BI[ic]||''}</span>${esc(l)}</div><div class="tv">${v}</div><div class="ts">${sub}</div></div>`;
+  waVendor('samsung'); const P=WPR_PER[WPA.per], c=waC()[P.k]||{}; if(!c.res&&!c.loading&&!c.err) waLoad(P.k);
+  const r=c.res, kr=r?r.find.filter(x=>x.lv===2).length:0, out=[];
+  out.push(t('s-wpa','wp','WP-Auswertung',r?'AZ '+waN(r.K.az,2):c.loading?'lädt …':'–',
+    r?`${nf(r.K.starts)} Starts · ${esc(P.l)}${kr?' · '+kr+' kritisch':''}`:c.err?'keine Werte':esc(P.l),r?(kr?'bad':'good'):''));
+  const xs=d.instances||[], x=xs[0], con=xs.length&&xs.every(i=>i.connected);
+  out.push(t('s-conn0','link','Verbindung',!x?'–':con?'verbunden':!x.loaded?'nicht geladen':'getrennt',esc(x&&x.ip?x.ip:'EHS Sentinel'),!x?'':con?'good':'bad'));
+  out.push(t('s-map','dev','Zuordnung','Panel ↔ HA',nf((INFO||{}).mapped)+' eigene Zuordnungen'));
+  out.push(t('s-ver','book','Versionen','Manager '+esc(d.version||'–'),'EHS Sentinel '+esc(d.ehs_version||'–')));
+  return `<div class="tiles s4">${out.join('')}</div>`; }
 function sSystemBody(){
   if(!ST) return '<div class="empty">Lade …</div>';
   const d=ST||{}, u=webUrl(), yn=v=>v==null?'–':v?'Ein':'Aus';
@@ -1360,14 +1372,13 @@ function sSystemBody(){
       +`<div class="btns"><button class="btn" data-re="${esc(x.entry_id)}">${I.re} Neu verbinden</button><a class="btn" href="/config/integrations/integration/ehs_sentinel" target="_top">${I.open} EHS Sentinel</a></div>`
       +`<div class="note">Schreibmodus, Polling und erweitertes Logging stellst du in EHS Sentinel unter „Konfigurieren“ ein.</div>`));
   if(!inst.length) inst.push(bAcc('s-conn0',BI.link,'Verbindung','nicht eingerichtet','<div class="note top0" style="padding-top:12px">EHS Sentinel ist nicht eingerichtet (HACS-Integration „EHS Sentinel“ mit RS485-Adapter).</div>'));
-  const L=[...inst,
+  const L=[bAcc('s-wpa',BI.wp,'WP-Auswertung','Laufzeit, Taktung, Arbeitszahl · PDF-Bericht',BS_OPEN['s-wpa']?`<div class="wab">${vWpa()}</div>`:' '),...inst,
     bAcc('s-map',BI.dev,'Zuordnung',nf((INFO||{}).mapped)+' eigene Zuordnungen',`<div style="padding:12px 0 8px">${vMap()}</div>`),
     bAcc('s-web',BI.chip,'Web-Oberfläche des Adapters',u?esc(u.replace('http://','')):'keine Adresse bekannt',
       u?`<div class="note">Weboberfläche des RS485-Adapters (z. B. Elfin EW11) – nur im Heimnetz erreichbar.</div><div class="btns"><a class="btn pri" href="${esc(u)}" target="_blank" rel="noopener">${I.open} Im neuen Fenster öffnen</a></div>`
        :'<div class="note top0" style="padding-top:12px">Keine Adresse des RS485-Adapters bekannt.</div>'),
     bAcc('s-ver',BI.book,'Versionen','EHS Sentinel '+esc(d.ehs_version||'–')+' · Manager '+esc(d.version||'–'),verRows())];
-  const h=Math.ceil(L.length/2);
-  return `<div class="grid"><div class="col accs">${L.slice(0,h).join('')}</div><div class="col accs">${L.slice(h).join('')}</div></div>`; }
+  return `<div id="ssys-tiles">${sSysTiles()}</div><div class="accs">${L.join('')}</div>`; }
 function sBus(){
   if(!ST) return '<div class="empty">Lade …</div>';
   const xs=(ST&&ST.instances)||[];
@@ -2643,6 +2654,7 @@ $('#main').addEventListener('click',async ev=>{
   const b=ev.target.closest('button,[data-act],[data-btile]'); if(!b) return;
   const act=b.dataset.act;
   if(((TAB==='ssystem' && !BSBMODE) || (TAB==='bsb' && BSUB==='system') || (TAB==='bosch' && BV==='bsystem')) && waClick(b)) return;
+  if(b.dataset.btile && TAB==='ssystem' && !BSBMODE){ const k=b.dataset.btile; BS_OPEN[k]=1; try{ localStorage.setItem('emsehs_bopen',JSON.stringify(BS_OPEN)); }catch(e){} render(); const el=document.getElementById('bacc-'+k); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); return; }
   if(b.dataset.bacc && TAB!=='bsb'){ const k=b.dataset.bacc; if(BS_OPEN[k]) delete BS_OPEN[k]; else BS_OPEN[k]=1; try{localStorage.setItem('emsehs_bopen',JSON.stringify(BS_OPEN));}catch(e){} render(); return; }
   if(b.dataset.hash){ location.hash=b.dataset.hash; window.scrollTo(0,0); return; }
   if((b.dataset.loff||b.dataset.lgo) && await logsClick(b)) return;

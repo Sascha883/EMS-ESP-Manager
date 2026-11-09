@@ -29,7 +29,7 @@
     "+/device/info"
   ],
   "requirements": [],
-  "version": "1.24.0",
+  "version": "1.24.2",
   "zeroconf": [
     {
       "type": "_http._tcp.local.",

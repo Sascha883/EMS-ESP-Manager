@@ -103,7 +103,7 @@ function waLoad(per,force){
     try{ c.res.setChg=await waSetHistory(c.res.sets,raw.t0,raw.t1); }catch(e){}
   })().catch(e=>{ c.err='Verlauf nicht geladen: '+((e&&e.message)||e); }).finally(fin);
 }
-function waOn(){ return (SYSV==='wpa' && (TAB==='ssystem' || (TAB==='bsb' && BSUB==='system'))) || (TAB==='bosch' && typeof BV!=='undefined' && BV==='bsystem'); }
+function waOn(){ return TAB==='ssystem' || (SYSV==='wpa' && TAB==='bsb' && BSUB==='system') || (TAB==='bosch' && typeof BV!=='undefined' && BV==='bsystem'); }
 function waRender(){ if(waOn()) render(); }
 
 // ---- Demodaten Brötje: Gas-Brennwertkessel, taktet in der Übergangszeit, 2 Trinkwasserladungen am Tag ----

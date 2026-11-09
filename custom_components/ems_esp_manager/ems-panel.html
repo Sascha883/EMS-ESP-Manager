@@ -541,7 +541,7 @@ const ENTITY_OVERRIDES = Object.assign({}, SAM_MODE ? SAMSUNG_MAP : {}, BSB_MODE
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2027.01.16";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2027.01.17";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -1769,7 +1769,7 @@ function unitSvg(act, size=1){
 // page=heater: eigenes Gerät „Heizstab“ im Manager – das Panel zeigt nur die Heizstab-Seite
 let stack = MGR_PAGE==='map' ? [{type:'map',filter:'all'}] : MGR_PAGE==='heater' ? [{type:'menu',id:'heater'}] : MGR_PAGE==='bsb' ? [{type:'menu',id:'bsb'}]
   : ['ehsconn','ehslog','ehspkt'].includes(MGR_PAGE) ? [{type:MGR_PAGE,svc:true,level:'all'}] : [{type:'home'}];   // Samsung: Seiten im Dashboard „EMS-EHS“
-let carIdx = LS.get('car',0);
+let carIdx = 0;   // v1.24.2: beim Aufruf immer die Grundansicht (Seite 1) – letzte Seite wird nicht mehr gemerkt
 let ACT = [];
 let svcOk = 0;
 const a = fn => { ACT.push(fn); return ACT.length-1; };
@@ -3230,8 +3230,8 @@ function vHome(){
   const slotHtml = slots.map(s=>`<div class="slot">${s.col ? s.col.map(c=>tileDiv(c)).join('') : tileDiv(s)}</div>`).join('');
   return homeHeader() + `
     <div class="car"><div class="inner"><div class="track" id="track" style="transform:translateX(${-carIdx*PAGE_W}px)">${slotHtml}</div></div>
-      ${carIdx>0?`<div class="arr l" data-a="${a(()=>{carIdx--;LS.set('car',carIdx);render();})}">${I.arrL}</div>`:''}
-      ${carIdx<pages-1?`<div class="arr r" data-a="${a(()=>{carIdx++;LS.set('car',carIdx);render();})}">${I.arrR}</div>`:''}
+      ${carIdx>0?`<div class="arr l" data-a="${a(()=>{carIdx--;render();})}">${I.arrL}</div>`:''}
+      ${carIdx<pages-1?`<div class="arr r" data-a="${a(()=>{carIdx++;render();})}">${I.arrR}</div>`:''}
     </div><div class="homeline"></div>
     <div class="dots">${slots.map((_,i)=>`<i class="${Math.floor(i/2)===carIdx?'on':''}"></i>`).join('')}</div>`;
 }
@@ -3240,7 +3240,7 @@ function bindHome(){
   if(tr){ let x0=null;
     tr.addEventListener('pointerdown',e=>{x0=e.clientX;});
     tr.addEventListener('pointerup',e=>{ if(x0==null) return; const dx=e.clientX-x0; x0=null;
-      if(Math.abs(dx)>60){ const maxI=Math.ceil(homeSlots().length/2)-1; carIdx=Math.min(maxI,Math.max(0,carIdx+(dx<0?1:-1))); LS.set('car',carIdx); render(); }}); }
+      if(Math.abs(dx)>60){ const maxI=Math.ceil(homeSlots().length/2)-1; carIdx=Math.min(maxI,Math.max(0,carIdx+(dx<0?1:-1)));  render(); }}); }
   const hold=(el,ms,fn)=>{ if(!el) return; let t; const end=()=>clearTimeout(t);
     el.addEventListener('pointerdown',()=>{ t=setTimeout(()=>{ longPressAt=Date.now(); fn(); },ms); });
     el.addEventListener('pointerup',end); el.addEventListener('pointerleave',end); el.addEventListener('pointercancel',end);
