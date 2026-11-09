@@ -1,0 +1,330 @@
+{
+  "config": {
+    "flow_title": "{host}",
+    "step": {
+      "user": {
+        "title": "Which heating system?",
+        "description": "Choose the manufacturer. Bosch / Buderus is connected via the EMS-ESP gateway, Samsung EHS via the HACS integration EHS Sentinel.",
+        "menu_options": {
+          "bosch": "Bosch / Buderus (EMS-ESP)",
+          "samsung": "Samsung EHS (EHS Sentinel)",
+          "heater": "Heizstab (novolto) – search in network",
+          "bsb": "BSB adapter (ESP/BSB-Atom or BSB-LAN) – Brötje, Elco, Baxi …"
+        }
+      },
+      "bosch": {
+        "title": "Connect EMS-ESP",
+        "description": "IP address (or hostname) of the EMS-ESP and a user with admin rights. Factory default: admin / admin.",
+        "data": {
+          "host": "IP address / hostname",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "host": "e.g. 192.168.178.42 or ems-esp.local",
+          "username": "User must be admin (needed for firmware update and restart)"
+        }
+      },
+      "samsung": {
+        "title": "Samsung EHS",
+        "description": "The values come from the HACS integration **EHS Sentinel** (RS485 adapter on the heat pump). The manager adds the panel “Samsung EHS” in the sidebar, the EHS Sentinel log and the Heizstab control.\n\n{found}"
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate EMS-ESP",
+        "description": "The login to EMS-ESP is no longer valid. Please enter the credentials again.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure EMS-ESP",
+        "data": {
+          "host": "IP address / hostname",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "heater": {
+        "title": "Heizstab (novolto)",
+        "description": "The heating rod connects by WLAN/LAN to the MQTT broker of Home Assistant and is searched there.\n\n{status}\n\n**Not found?** Set up MQTT in the heating rod: connect to its hotspot “novolto-xxxxxx”, open http://192.168.2.1/expert (or in the home network http://IP-of-the-rod/expert), set `mqtt.broker_uri` = `mqtt://HA-IP:1883`, user and password of a Home Assistant user, restart (HA-IP = address of Home Assistant). Then tick “Search again”.",
+        "data": {
+          "device": "Found heating rods",
+          "topic": "Base topic (manual, optional)",
+          "rescan": "Search again",
+          "lan": "Search home network (Wi-Fi/LAN, without MQTT)",
+          "host": "Web address of the heating rod (optional)"
+        },
+        "data_description": {
+          "topic": "Default: serial number (setting mqtt.base_topic in the device). Overrides the selection.",
+          "lan": "Checks all devices in Home Assistant's network for a web configuration (port 80) and Modbus (port 502) and detects the novolto heating rod. Takes a few seconds.",
+          "host": "IP of the start page, e.g. 192.168.0.17 (router device list). With “Search again” only this address is checked; the integration then links the start page and the expert page."
+        }
+      },
+      "heater_confirm": {
+        "title": "Heizstab found",
+        "description": "novolto heating rod **{serial}** (firmware {fw}, topic `{topic}`) was found on the MQTT broker. Add it? Control (PV surplus, fixed power) is set up in the panel “Heizstab”."
+      },
+      "heater_scan": {
+        "title": "Searching heating rod …"
+      },
+      "bsb": {
+        "title": "BSB adapter",
+        "description": "Searches BSB adapters: ESPHome devices with BSB values or the action `bsb_get` (e.g. BSB-Atom), BSB-LAN from the Home Assistant integration “BSB-LAN” and optionally in the home network.\n\n{status}\n\nAfter setup the controller is detected automatically (parameters 6224–6226). Parameter scan, bus polling and bus log are in the panel under **EMS-Regelung → ESP-Bus-Adapter**.",
+        "data": {
+          "device": "Found adapters",
+          "host": "BSB-LAN address (optional)",
+          "rescan": "Search again",
+          "lan": "Search home network for BSB-LAN"
+        },
+        "data_description": {
+          "host": "e.g. 192.168.178.88 – with passkey: 192.168.178.88/1234",
+          "lan": "Checks all devices with a web page (port 80) for the BSB-LAN JSON API (/JI)."
+        }
+      },
+      "bsb_confirm": {
+        "title": "BSB adapter found",
+        "description": "**{name}** ({kind}) was detected as BSB adapter. Direct query on the bus: {get}.\n\nAdd it? The controller is detected automatically afterwards."
+      },
+      "bsb_scan": {
+        "title": "Searching BSB adapter …"
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach EMS-ESP. Check the IP address.",
+      "invalid_auth": "Wrong username or password.",
+      "not_admin": "This user has no admin rights on the EMS-ESP.",
+      "unknown": "Unexpected error.",
+      "heater_none": "No heating rod selected – search again or enter the base topic.",
+      "invalid_host": "Invalid address – enter an IP such as 192.168.0.17 or a hostname.",
+      "bsb_none": "No adapter selected – search again or enter the BSB-LAN address."
+    },
+    "abort": {
+      "already_configured": "This EMS-ESP or Samsung EHS is already configured.",
+      "reauth_successful": "Re-authentication successful.",
+      "reconfigure_successful": "Settings saved.",
+      "not_ipv4_address": "Only IPv4 addresses are offered.",
+      "no_reconfigure": "This device has no connection settings to change.",
+      "heater_configured": "A heating rod is already set up.",
+      "not_novolto": "Not a novolto heating rod.",
+      "bsb_configured": "A BSB adapter is already set up."
+    },
+    "progress": {
+      "heater_scan": "Search running (MQTT broker, with home network search up to approx. 45 s). Log:\n\n{log}",
+      "bsb_scan": "Search running (Home Assistant devices, with home network up to approx. 30 s). Log:\n\n{log}"
+    }
+  },
+  "entity": {
+    "button": {
+      "restart": {
+        "name": "Restart EMS-ESP"
+      },
+      "fetch_values": {
+        "name": "Fetch all values"
+      },
+      "check_updates": {
+        "name": "Check for updates"
+      },
+      "install_latest": {
+        "name": "Install update"
+      },
+      "install_selected": {
+        "name": "Install version"
+      },
+      "clear_log": {
+        "name": "Clear log"
+      },
+      "gateway_sensors": {
+        "name": "Create gateway sensors"
+      }
+    },
+    "select": {
+      "stable_version": {
+        "name": "Select firmware version"
+      },
+      "watch_mode": {
+        "name": "Bus capture"
+      },
+      "log_level": {
+        "name": "Log level"
+      },
+      "tx_mode": {
+        "name": "Tx-Modus (Senden)"
+      },
+      "locale": {
+        "name": "Language of the EMS-ESP values"
+      }
+    },
+    "binary_sensor": {
+      "update_available": {
+        "name": "Firmware status"
+      }
+    },
+    "sensor": {
+      "system_state": {
+        "name": "System state"
+      },
+      "firmware_installed": {
+        "name": "Installed firmware"
+      },
+      "firmware_latest": {
+        "name": "Latest firmware"
+      },
+      "update_progress": {
+        "name": "Update progress"
+      },
+      "hardware": {
+        "name": "Hardware"
+      },
+      "bus_status": {
+        "name": "EMS bus"
+      },
+      "num_devices": {
+        "name": "Number of EMS devices"
+      },
+      "network": {
+        "name": "Network connection"
+      },
+      "wifi_rssi": {
+        "name": "Wi-Fi signal"
+      },
+      "uptime": {
+        "name": "Uptime since restart"
+      },
+      "free_heap": {
+        "name": "Free memory"
+      },
+      "bus_log": {
+        "name": "Bus log"
+      },
+      "plant": {
+        "name": "Detected plant"
+      }
+    },
+    "switch": {
+      "analog_enabled": {
+        "name": "Analog sensors"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EMS-ESP Manager – settings",
+        "description": "All devices of the manager in one place. The “EMS-EHS” page contains Bosch, Samsung and the heating rod as tabs. Installer and wall tablet apply to all devices.",
+        "sections": {
+          "Bosch / Buderus (EMS-ESP)": {
+            "name": "Bosch / Buderus (EMS-ESP)",
+            "data": {
+              "Seite „EMS-ESP“ anzeigen": "Show “EMS-ESP” page",
+              "Panel „Bosch EHS“ anzeigen": "Show “Bosch EHS” panel"
+            }
+          },
+          "Bosch / Buderus (EMS-ESP) 2": {
+            "name": "Bosch / Buderus (EMS-ESP) 2",
+            "data": {
+              "Seite „EMS-ESP“ anzeigen": "Show “EMS-ESP” page",
+              "Panel „Bosch EHS“ anzeigen": "Show “Bosch EHS” panel"
+            }
+          },
+          "Bosch / Buderus (EMS-ESP) 3": {
+            "name": "Bosch / Buderus (EMS-ESP) 3",
+            "data": {
+              "Seite „EMS-ESP“ anzeigen": "Show “EMS-ESP” page",
+              "Panel „Bosch EHS“ anzeigen": "Show “Bosch EHS” panel"
+            }
+          },
+          "Samsung EHS": {
+            "name": "Samsung EHS",
+            "data": {
+              "Seite „EMS-EHS“ anzeigen": "Show “EMS-EHS” page",
+              "Panel „Samsung EHS“ anzeigen": "Show “Samsung EHS” panel"
+            }
+          },
+          "Samsung EHS 2": {
+            "name": "Samsung EHS 2",
+            "data": {
+              "Seite „EMS-EHS“ anzeigen": "Show “EMS-EHS” page",
+              "Panel „Samsung EHS“ anzeigen": "Show “Samsung EHS” panel"
+            }
+          },
+          "Samsung EHS 3": {
+            "name": "Samsung EHS 3",
+            "data": {
+              "Seite „EMS-EHS“ anzeigen": "Show “EMS-EHS” page",
+              "Panel „Samsung EHS“ anzeigen": "Show “Samsung EHS” panel"
+            }
+          },
+          "ESP-Bus-Adapter (Brötje)": {
+            "name": "ESP bus adapter (Brötje)",
+            "data": {
+              "Seite „Brötje EHS“ anzeigen": "Show “Brötje EHS” page",
+              "Panel „ESP-Bus-Adapter“ anzeigen": "Show “ESP-Bus-Adapter” panel"
+            }
+          },
+          "ESP-Bus-Adapter (Brötje) 2": {
+            "name": "ESP bus adapter (Brötje) 2",
+            "data": {
+              "Seite „Brötje EHS“ anzeigen": "Show “Brötje EHS” page",
+              "Panel „ESP-Bus-Adapter“ anzeigen": "Show “ESP-Bus-Adapter” panel"
+            }
+          },
+          "ESP-Bus-Adapter (Brötje) 3": {
+            "name": "ESP bus adapter (Brötje) 3",
+            "data": {
+              "Seite „Brötje EHS“ anzeigen": "Show “Brötje EHS” page",
+              "Panel „ESP-Bus-Adapter“ anzeigen": "Show “ESP-Bus-Adapter” panel"
+            }
+          },
+          "Heizstab (novolto)": {
+            "name": "Heating rod (novolto)",
+            "data": {
+              "Panel „Heizstab“ anzeigen": "Show “Heizstab” panel"
+            }
+          },
+          "Heizstab (novolto) 2": {
+            "name": "Heating rod (novolto) 2",
+            "data": {
+              "Panel „Heizstab“ anzeigen": "Show “Heizstab” panel"
+            }
+          },
+          "Heizstab (novolto) 3": {
+            "name": "Heating rod (novolto) 3",
+            "data": {
+              "Panel „Heizstab“ anzeigen": "Show “Heizstab” panel"
+            }
+          },
+          "Fachbetrieb – Kontakt auf der Info-Seite (gilt für alle Geräte)": {
+            "name": "Installer – contact on the info page (all devices)",
+            "description": "Shown in the panel under System → Installer. Leave empty if not wanted.",
+            "data": {
+              "Firmenname": "Company name",
+              "Adresse": "Address",
+              "Telefon": "Phone"
+            }
+          },
+          "Wandtablet / Zugriff von außen (gilt für alle Geräte)": {
+            "name": "Wall tablet / access from outside (all devices)",
+            "data": {
+              "Zugriffstoken aus Home Assistant": "Access token from Home Assistant",
+              "Kiosk-Adresse (zum Kopieren)": "Kiosk address (for copying)",
+              "Neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "Create new kiosk key (old address stops working)",
+              "So geht’s": "How to"
+            },
+            "data_description": {
+              "Zugriffstoken aus Home Assistant": "Checked when saving. The kiosk key is not a token.",
+              "Neuen Kiosk-Schlüssel erzeugen (alte Adresse wird ungültig)": "E.g. if a tablet was lost. Copy the new address afterwards."
+            }
+          }
+        },
+        "data": {
+          "Seite „EMS-EHS“ anzeigen (Übersicht mit Bosch, Samsung, Heizstab)": "Show “EMS-EHS” page (overview with Bosch, Samsung, heating rod)"
+        }
+      }
+    },
+    "error": {
+      "panel_token_invalid": "Home Assistant does not know this token. Create a new one under Profile → Security → Long-lived access tokens and paste the full text (starts with “eyJ…”).",
+      "panel_token_not_long_lived": "This is not a long-lived token (it expires soon). Create one under Profile → Security → Long-lived access tokens."
+    }
+  }
+}

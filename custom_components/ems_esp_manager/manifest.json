@@ -1,0 +1,39 @@
+{
+  "domain": "ems_esp_manager",
+  "name": "EMS-ESP Manager (Bosch, Samsung & BSB)",
+  "after_dependencies": [
+    "bsblan",
+    "esphome",
+    "mqtt"
+  ],
+  "codeowners": [
+    "@Sascha883"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "lovelace",
+    "websocket_api"
+  ],
+  "dhcp": [
+    {
+      "hostname": "novolto-*"
+    }
+  ],
+  "documentation": "https://github.com/Sascha883/EMS-ESP-Manager",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Sascha883/EMS-ESP-Manager/issues",
+  "mqtt": [
+    "+/device/info"
+  ],
+  "requirements": [],
+  "version": "1.24.0",
+  "zeroconf": [
+    {
+      "type": "_http._tcp.local.",
+      "name": "ems-esp*"
+    }
+  ]
+}
