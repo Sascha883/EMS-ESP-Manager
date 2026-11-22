@@ -2153,6 +2153,7 @@ function plCfg(){ return (PLIM && PLIM.config) || {}; }
 function plSt(){ return (PLIM && PLIM.state) || {}; }
 let PLIM_ERR = null;   // letzter Fehler einer Aktion {t, what, msg} – bleibt sichtbar
 async function plMsg(o, quiet){
+  if(conn.type==='demo' && !BSB_MODE && (o.silent||o.silent_sched||o.read||!Object.keys(o).length)){ const r=silDemoMsg(o); scheduleRender(); return r; }
   const what = o.silent ? 'Geräuscharmer Betrieb schreiben' : o.learn ? (o.learn.stop?'Anlernen beenden':'Anlernen starten') : o.dimprog ? (o.dimprog.stop?'Programm abbrechen':o.dimprog.start?'Dimm-Testprogramm starten':'Einstellung speichern') : o.itest ? 'Eingangstest starten' : o.test ? 'Test starten' : o.set!=null ? (o.set?'Dimmung ein':'Dimmung aus') : o.input ? 'Eingang '+o.input.n+' schreiben' : o.config ? 'Einstellung speichern' : 'Status lesen';
   const fail = msg => { if(!quiet){ PLIM_ERR = {t:new Date(), what, msg}; toast(what+': '+msg, 6000); } scheduleRender(); return false; };
   if(!conn.msg || !conn.ready) return fail(conn.type==='demo'
@@ -2308,8 +2309,22 @@ const SIL_MODES = [['0','Aus'],['1','Auto'],['2','Dauerhaft an']];
 const SIL_LV = [['1','Stufe 1 (−30 %)'],['2','Stufe 2 (−40 %)'],['3','Stufe 3 (−50 %)'],['4','Stufe 4 (−60 %)']];
 const SIL_OFF = {mode:10, mintemp:11, from:52, to:53, level:64};
 let SIL_BUSY = null;
-function silMgr(){ return !!(conn.msg && conn.type!=='demo'); }
-function slv(k){ const lv=(PLIM&&PLIM.live)||{}; if(lv['silent_'+k]!=null) return +lv['silent_'+k];
+function silMgr(){ return !!(conn.msg && conn.type!=='demo') || (conn.type==='demo' && !BSB_MODE); }
+function silDemo(){   // Demo: Werte wie an der CS5800i, Zeitprogramm 12–13 + 19–08 Uhr
+  if(PLIM && PLIM.silent_sched) return;
+  PLIM = Object.assign(PLIM||{}, {config:{method:'input'}, state:{}, live:Object.assign((PLIM&&PLIM.live)||{}, {hpcurrpower:1139, silent_mode:1, silent_from:1140, silent_to:480, silent_mintemp:-10, silent_level:3, silent_limit:46, silent_spd:3120})});
+  const d=()=>[{time:'08:00',mode:'off'},{time:'12:00',mode:'on'},{time:'13:00',mode:'off'},{time:'19:00',mode:'on'}];
+  PLIM.silent_sched = {enabled:true, custom:true, days:[d(),d(),d(),d(),d(),[{time:'08:00',mode:'off'},{time:'20:00',mode:'on'}],[{time:'09:00',mode:'off'},{time:'20:00',mode:'on'}]], last:'heute 19:00: Auto 19:00–08:00'};
+}
+function silDemoMsg(o){   // Demo-Antwort statt Manager
+  silDemo(); const lv=PLIM.live, sc=PLIM.silent_sched;
+  if(o.silent){ lv['silent_'+o.silent.key]=+o.silent.value; if(['mode','from','to'].includes(o.silent.key)) sc.enabled=false; if(o.silent.key==='level') lv.silent_limit={1:75,2:52,3:46,4:40}[+o.silent.value]; }
+  if(o.silent_sched){ const q=o.silent_sched;
+    if(q.points) (q.days||[]).forEach(i=>sc.days[i]=JSON.parse(JSON.stringify(q.points)));
+    if('enabled' in q) sc.enabled=!!q.enabled;
+    if(sc.enabled){ lv.silent_mode=1; sc.last='Demo: Zeitprogramm angewendet'; } }
+  return true; }
+function slv(k){ if(conn.type==='demo'&&!BSB_MODE) silDemo(); const lv=(PLIM&&PLIM.live)||{}; if(lv['silent_'+k]!=null) return +lv['silent_'+k];
   const f={from:'silentfrom',to:'silentto',mintemp:'mintempsilent'}[k]; if(f && lv[f]!=null && lv[f]!=='' && !isNaN(+lv[f])) return +lv[f];
   if(k==='level' && lv.powerreduction!=null && !isNaN(+lv.powerreduction)) return Math.round(+lv.powerreduction/10)-2;
   return null; }
@@ -2319,11 +2334,17 @@ function silLabel(k,v){ if(v==null) return '–'; v=+v;
   if(k==='from'||k==='to') return String(Math.floor(v/60)).padStart(2,'0')+':'+String(v%60).padStart(2,'0');
   if(k==='level') return 'Stufe '+v+' (−'+((v+2)*10)+' %)';
   return String(v); }
-function silSched(){ return (PLIM&&PLIM.silent_sched)||null; }
+function silSched(){ if(conn.type==='demo'&&!BSB_MODE) silDemo(); return (PLIM&&PLIM.silent_sched)||null; }
 function silProg(){ const c=silSched(); return !!(c&&c.enabled); }
 function silNavVal(){ if(!silMgr()) return has('select.boiler_silentmode')?selLabel('select.boiler_silentmode','silentmode'):'';
   if(silProg()) return 'Auto (Zeitprogramm)';
   const m=slv('mode'); return m==null ? '' : silLabel('mode',m)+(m===1&&slv('from')!=null?' · '+silLabel('from',slv('from'))+'–'+silLabel('to',slv('to')):''); }
+function silAsk(go){   // v1.26.0: Hinweis vor dem Aktivieren (Auto/Zeitprogramm oder Dauerhaft an)
+  askConfirm('Geräuscharmer Betrieb – Hinweis',
+    'Die Leistung der Wärmepumpe wird um 30–60 % verringert. Bei Kälte reicht die Heizleistung evtl. nicht aus, der Zuheizer kann häufiger anspringen. '
+    +'Das Zeitprogramm schreibt selbstständig in die Wärmepumpe. Die Funktion ist noch in Erprobung – Anlage beobachten. Nutzung auf eigene Verantwortung.',
+    go, 'Verstanden – aktivieren');
+}
 async function silProgSet(on){
   if(SIL_BUSY){ toast('Bitte warten – es wird gerade geschrieben'); return; }
   SIL_BUSY='mode'; render();
@@ -2353,7 +2374,7 @@ MENUS.silent = { title:'Geräuscharmer Betrieb', svc:true, get items(){
   ...(weg?[WARN('Die Dimmung (Leistungsbegrenzung, Weg C) nutzt gerade den geräuscharmen Betrieb. Betriebsart und Stufe stellt sie beim Ausschalten zurück.')]:[]),
   ...(!PLIM||m==null?[TXT(PLIM?'Werte werden direkt bei der Wärmepumpe gelesen …':'Verbindung zum Manager wird aufgebaut …')]:[]),
   FN('Betriebsart', ()=>{ if(weg){ toast('Erst die Dimmung ausschalten'); return; } push({type:'ledit',title:'Betriebsart',kind:'sel',v:silModeKey(),opts:[['0','Aus'],['sched','Auto (Zeitprogramm)'],['2','Dauerhaft an']],
-      save:v=>{ if(v==='sched'){ if(!silProg()) silProgSet(true); } else silSet('mode',+v); }}); }, Object.assign({val:silModeLabel}, settings.advanced?{hint:'0x484 Offset 10'}:{})),
+      save:v=>{ if(v==='sched'){ if(!silProg()) silAsk(()=>silProgSet(true)); } else if(v==='2' && slv('mode')!==2) silAsk(()=>silSet('mode',2)); else silSet('mode',+v); }}); }, Object.assign({val:silModeLabel}, settings.advanced?{hint:'0x484 Offset 10'}:{})),
   ...(silProg() ? [NAV('Programmzeiten','silsched',{val:()=>schedSummary('silent')||'–'}),
        ...(silSched().last?[TXT('Zuletzt geschaltet: '+silSched().last)]:[])]
      : m===1 ? [TXT('Die Wärmepumpe läuft mit ihrem eigenen Zeitfenster '+silLabel('from',slv('from'))+'–'+silLabel('to',slv('to'))+'. Für mehrere Schaltpunkte je Tag „Auto (Zeitprogramm)“ wählen.')] : []),
@@ -3780,7 +3801,14 @@ function silRanges(pts){   // Zeiträume „Leise“ eines Tages: 12:00–13:00 
   const p=(pts||[]).slice().sort((x,y)=>t2m(x.time)-t2m(y.time)); const out=[]; let a_=null, first=true;
   p.forEach(x=>{ if(x.mode==='on'&&a_==null) a_=x.time; else if(x.mode==='off'){ if(a_!=null){ out.push(a_+'–'+x.time); a_=null; } else if(first) out.push('…–'+x.time); } first=false; });
   if(a_!=null) out.push(a_+'–…'); return out.length?out.join(' · '):'kein Zeitraum'; }
-function schedSummary(n){ if(n==='silent'){ const sc=silSched(); return sc?silRanges(sc.days[(new Date().getDay()+6)%7]):''; } const c=SCHED[n]; if(!c||!c.days) return ''; const d=c.days[(new Date().getDay()+6)%7]||[]; const P=SPROG(n); const cm=(c.constant||[])[(new Date().getDay()+6)%7]; return d.length ? d.map(p=>smode(P,p.mode).i+' '+p.time).join('  ') : (cm?'ganztägig '+smode(P,cm).l:''); }
+function silNow(){   // „Leise bis 09:00“ / „Normal bis Mo 20:00“ aus dem Zeitprogramm
+  const sc=silSched(); if(!sc) return ''; const now=new Date(), d0=new Date(now); d0.setHours(0,0,0,0); const ev=[];
+  for(let k=-7;k<=7;k++){ const day=d0.getTime()+k*864e5, di=(new Date(day).getDay()+6)%7; (sc.days[di]||[]).forEach(p=>ev.push([day+t2m(p.time)*6e4,p.mode])); }
+  ev.sort((x,y)=>x[0]-y[0]); const past=ev.filter(e=>e[0]<=now.getTime()); if(!past.length) return ''; const cur=past[past.length-1][1];
+  const nx=ev.find(e=>e[0]>now.getTime()&&e[1]!==cur); const lab=cur==='on'?'Leise':'Normal'; if(!nx) return lab+' (dauerhaft)';
+  const t=new Date(nx[0]); const same=t.toDateString()===now.toDateString(); const tom=new Date(now.getTime()+864e5).toDateString()===t.toDateString();
+  return lab+' bis '+(same?'':tom&&t.getHours()<12?'':DAYS[(t.getDay()+6)%7]+' ')+m2t(t.getHours()*60+t.getMinutes())+' Uhr'; }
+function schedSummary(n){ if(n==='silent') return silNow(); const c=SCHED[n]; if(!c||!c.days) return ''; const d=c.days[(new Date().getDay()+6)%7]||[]; const P=SPROG(n); const cm=(c.constant||[])[(new Date().getDay()+6)%7]; return d.length ? d.map(p=>smode(P,p.mode).i+' '+p.time).join('  ') : (cm?'ganztägig '+smode(P,cm).l:''); }
 const t2m = s => { const [h,m]=s.split(':').map(Number); return h*60+m; };
 const m2t = m => String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
 function dayBar(days, i, n){
@@ -3800,11 +3828,11 @@ function vSched(t){
   if(c.err && !c.days) body = `<div class="note">${esc(c.err)}</div><div class="list"><div class="row" data-a="${a(()=>loadSched(t.n,true))}"><span class="k">Erneut lesen</span><span class="v">⟳</span></div></div>`;
   else if(!c.days) body = `<div class="note">Programmzeiten werden vom Regler gelesen …</div>`;
   else body = `<div class="list">${c.days.map((d,i)=>`<div class="row" data-a="${a(()=>push({type:'schededit',n:t.n,day:i,pts:JSON.parse(JSON.stringify(d||P.def))}))}">
-      <span class="sday">${DAYS[i]}</span>${d?dayBar(c.days,i,t.n):'<span class="sbar"></span>'}<span class="v" style="font-size:15px;min-width:118px;justify-content:flex-end">${d&&t.n==='silent'?'Leise '+silRanges(d):d?(d.map(p=>`${smode(P,p.mode).i} ${p.time}`).join(' ')||((c.constant||[])[i]?'ganztägig '+smode(P,c.constant[i]).i:'–')):'<span style="color:#888">unbekannt</span>'}${I.chevR}</span></div>`).join('')}
+      <span class="sday">${DAYS[i]}</span>${d?dayBar(c.days,i,t.n):'<span class="sbar"></span>'}${t.n==='silent'?`<span class="v">${I.chevR}</span>`:`<span class="v" style="font-size:15px;min-width:118px;justify-content:flex-end">${d?(d.map(p=>`${smode(P,p.mode).i} ${p.time}`).join(' ')||((c.constant||[])[i]?'ganztägig '+smode(P,c.constant[i]).i:'–')):'<span style="color:#888">unbekannt</span>'}${I.chevR}</span>`}</div>`).join('')}
      ${t.n==='silent'?'':`<div class="row" data-a="${a(()=>loadSched(t.n,true))}"><span class="k">Vom Regler neu lesen<small>${c.loading?'liest … (bis ca. 30 s)':c.updated?'Stand '+new Date(c.updated).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''}</small></span><span class="v">⟳</span></div>`}
      ${c.note?`<div class="note" style="color:#f2b632">${esc(c.note)}</div>`:''}
      ${c.err?`<div class="note" style="color:#f2b632">${esc(c.err)}</div>`:''}
-     <div class="note">${t.n==='silent'?'Leise = geräuscharmer Betrieb mit der eingestellten Leistungsreduktion, Normal = volle Leistung (jeweils ab Uhrzeit, bis 6 Schaltpunkte je Tag). Das Programm läuft im EMS-ESP Manager und schreibt vor jedem Zeitraum Von/Bis in die Wärmepumpe.':P.modes.map(x=>x.i===x.l?x.l:x.i+' '+x.l).join(' · ')+' (jeweils ab Uhrzeit). Der Manager merkt sich jede Änderung, die über den Bus geht (auch vom Display, solange der Bus-Mitschnitt läuft).'}</div></div>`;
+     <div class="note">${t.n==='silent'?'Blau = leise (geräuscharmer Betrieb mit der eingestellten Leistungsreduktion), grau = normal. Tag antippen zum Bearbeiten (bis 6 Schaltpunkte). Das Programm läuft im EMS-ESP Manager und schreibt vor jedem Zeitraum Von/Bis in die Wärmepumpe.':P.modes.map(x=>x.i===x.l?x.l:x.i+' '+x.l).join(' · ')+' (jeweils ab Uhrzeit). Der Manager merkt sich jede Änderung, die über den Bus geht (auch vom Display, solange der Bus-Mitschnitt läuft).'}</div></div>`;
   return header(t.n==='dhw'||t.n==='silent'?P.title:P.title+(HEATING_CIRCUITS.filter(hcExists).length>1?' '+hcName(t.n):''))+`<div class="body">${body}</div>`;
 }
 function vSchedEdit(t){
