@@ -541,7 +541,7 @@ const ENTITY_OVERRIDES = Object.assign({}, SAM_MODE ? SAMSUNG_MAP : {}, BSB_MODE
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2027.01.21";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2027.01.22";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -2449,19 +2449,12 @@ function extinMenu(n){
       ...((n===1||n===4) ? [FN('Begrenzungswert', ()=>{ const t={type:'ledit',title:'Begrenzungswert Eingang '+n,kind:'num',v:extinMod(n)??0,min:0,max:100,step:1,unit:'',fmt:v=>String(v)};
           t.commit=()=>{ if(t.v!==extinMod(n)) extinSet(n,{mod:t.v},'Begrenzungswert '+t.v); }; push(t); }, {val:()=>{ const m=extinMod(n); return m==null?'–':String(m); }, adv:true})] : []),
     ] : []),
-    SEC('Test'),
-    FN('Funktionen testen', ()=>{ if(plSt().testing){ push({type:'plimlog',svc:true}); return; } extinTest(n,false); }, {val:()=>plSt().testing?'läuft …':'Eingang '+n}),
-    FN('Alle Funktionen testen', ()=>{ if(plSt().testing){ push({type:'plimlog',svc:true}); return; } extinTest(n,true); }, {val:()=>bits.length+' Punkte', adv:true}),
-    FN('Testprotokoll', ()=>push({type:'plimlog',svc:true}), {val:()=>{ const s=plSt(); return s.test_done?new Date(s.test_done).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'noch keins'; }}),
     FN('Funktion anlernen', ()=>{ if(!plSt().learning){ LEARN.n=n; if(!learnFnOpts(n).some(x=>x[0]===LEARN.fn)) LEARN.fn='keine'; } push({type:'menu',id:'extlearn'}); }, {val:()=>plSt().learning?'läuft …':'', adv:true}),
     TXT('Jeder Schalter schreibt genau ein Byte in die Wärmepumpe (Telegramm 0x486, EMS-ESP hpin'+n+'opt) – so wie das UI 800. Übernommen gilt erst, wenn die Wärmepumpe den neuen Wert selbst auf dem Bus meldet. Die Zuordnung ist am 04.11. und 12.11.2026 an einer CS5800i/CS6800i mit UI 800 ermittelt (Software 47.12).'+(n===1?' „EVU Dimmen“ kennt EMS-ESP nicht: der Manager liest und schreibt es direkt bei der Wärmepumpe (0x486 Offset 57).':'')+((n===2||n===3)?' Den Begrenzungswert gibt es nur für Eingang 1 und 4 (EMS-ESP würde ihn sonst bei Eingang 1 eintragen).':'')),
   ]; } };
 }
 [1,2,3,4].forEach(n=>{ MENUS['extin'+n]=extinMenu(n); });
 MENUS.s_ext = { title:'Externer Eingang', svc:true, items:[...[1,2,3,4].map(n=>NAV('Externer Eingang '+n,'extin'+n,{val:()=>{ const lv=(PLIM&&PLIM.live)||{}; return (lv['hpin'+n]!=null?String(lv['hpin'+n])+' · ':'')+plOpt(n); }})),
-  SEC('Test'),
-  FN('Funktionen testen (alle Eingänge)', ()=>{ if(plSt().testing){ push({type:'plimlog',svc:true}); return; } extinTest(null,false); }, {val:()=>plSt().testing?'läuft …':[1,2,3,4].reduce((s,i)=>s+EXTIN_UI[i].length,0)+' Punkte'}),
-  FN('Testprotokoll', ()=>push({type:'plimlog',svc:true}), {val:()=>{ const s=plSt(); return s.test_done?new Date(s.test_done).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'noch keins'; }}),
   SEC('Anlernen',{adv:true}), NAV('Funktion anlernen','extlearn',{val:()=>plSt().learning?'läuft …':'', adv:true})] };
 
 /* ---------- Anlern-Modus: wie schreibt das UI 800 die Funktion eines Eingangs? (Mitschnitt im Manager) ---------- */
