@@ -752,6 +752,7 @@ async def ws_dhwopt(hass: HomeAssistant, connection, msg) -> None:
         vol.Optional("itest"): dict,
         vol.Optional("dimprog"): dict,
         vol.Optional("silent"): dict,   # v1.24.4: {"key": mode|mintemp|from|to|level, "value": int}
+        vol.Optional("silent_sched"): dict,   # v1.26.0: {"enabled": bool} | {"days": [0..6], "points": [...]}
     }
 )
 @websocket_api.async_response
@@ -764,7 +765,7 @@ async def ws_plim(hass: HomeAssistant, connection, msg) -> None:
     if pl is None:
         connection.send_error(msg["id"], "not_loaded", "EMS-ESP Manager nicht geladen")
         return
-    if ("config" in msg or "set" in msg or "input" in msg or "learn" in msg or "itest" in msg or "dimprog" in msg or "silent" in msg or msg["test"]) and not connection.user.is_admin:
+    if ("config" in msg or "set" in msg or "input" in msg or "learn" in msg or "itest" in msg or "dimprog" in msg or "silent" in msg or "silent_sched" in msg or msg["test"]) and not connection.user.is_admin:
         connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
         return
     if "config" in msg:
@@ -787,6 +788,8 @@ async def ws_plim(hass: HomeAssistant, connection, msg) -> None:
         elif lr.get("start") and not pl.async_start_learn(int(lr.get("secs") or 180), str(lr.get("note") or "")[:120]):
             connection.send_error(msg["id"], "busy", "Ein Test oder Anlernen läuft bereits")
             return
+    if "silent_sched" in msg:
+        await pl.async_save_sched(msg["silent_sched"])
     if "dimprog" in msg:
         dp = msg["dimprog"]
         if isinstance(dp.get("config"), dict):

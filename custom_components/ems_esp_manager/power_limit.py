@@ -190,6 +190,99 @@ def silent_label(key: str, v: Any) -> str:
         return f"Stufe {v} (−{(v + 2) * 10} %)"
     return str(v)
 
+# v1.26.0: Zeitprogramm „Geräuscharmer Betrieb“ im Manager (bis 6 Schaltpunkte je Tag, wie HK-Programmzeiten).
+# Die WP kennt nur EIN Von/Bis-Fenster (0x484 Offset 52/53). Der Manager schreibt vor jedem Fenster dessen Von/Bis
+# und stellt die Betriebsart auf Auto; liegt das nächste Fenster mehr als 24 h entfernt, Betriebsart Aus.
+# Fällt HA aus, wiederholt die WP täglich das zuletzt geschriebene Fenster.
+SCHED_MODES = ("on", "off")
+SCHED_MAX_POINTS = 6
+SCHED_DEFAULT_DAY = [{"time": "06:00", "mode": "off"}, {"time": "22:00", "mode": "on"}]
+
+
+def _t2m(t: str) -> int:
+    h, m = str(t).split(":")
+    return int(h) * 60 + int(m)
+
+
+def _m2t(m: int) -> str:
+    m = int(m) % 1440
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def clean_points(points: Any) -> list[dict[str, str]]:
+    """Schaltpunkte prüfen: hh:mm in 15-min-Schritten, Modus on/off, max. 6, sortiert, keine doppelten Zeiten."""
+    out: dict[int, str] = {}
+    for p in points or []:
+        m = _t2m(p["time"])
+        mode = str(p["mode"])
+        if not 0 <= m < 1440 or m % 15 or mode not in SCHED_MODES:
+            raise ValueError(f"ungültiger Schaltpunkt {p}")
+        out[m] = mode
+    if len(out) > SCHED_MAX_POINTS:
+        raise ValueError(f"höchstens {SCHED_MAX_POINTS} Schaltpunkte je Tag")
+    return [{"time": _m2t(m), "mode": out[m]} for m in sorted(out)]
+
+
+def _inside(x: int, a: int, b: int) -> bool:
+    """x (Minute des Tages) liegt im täglichen Fenster a–b der WP (über Mitternacht möglich)."""
+    if a < b:
+        return a <= x < b
+    if a > b:
+        return x >= a or x < b
+    return False
+
+
+def sched_target(days: list, now_m: float) -> tuple:
+    """Soll-Zustand der WP für jetzt: (0,) Aus · (2,) Dauerhaft an · (1, von, bis) Auto mit Fenster.
+
+    days: 7 Listen (Mo–So) mit {"time","mode"}; now_m: Minuten seit heute 0:00, heute = Index 7 im Zeitstrahl
+    (Aufrufer verschiebt die Wochentage so, dass days[0] = heute)."""
+    ev: list[tuple[int, str]] = []
+    for k in range(-7, 9):
+        for p in days[k % 7] or []:
+            ev.append((k * 1440 + _t2m(p["time"]), p["mode"]))
+    if not ev:
+        return (0,)
+    ev.sort()
+    if not any(m == "on" for _, m in ev):
+        return (0,)
+    if not any(m == "off" for _, m in ev):
+        return (2,)
+    # Zeitstrahl in An-Abschnitte [s, e)
+    segs: list[list[float]] = []
+    state, start = "off", None
+    for t, m in ev:
+        if m == "on" and state != "on":
+            start, state = t, "on"
+        elif m == "off" and state == "on":
+            segs.append([start, t])
+            state = "off"
+    if state == "on":
+        segs.append([start, float("inf")])
+    now_i = int(now_m)
+    floor15 = now_i - now_i % 15
+    for s_, e_ in segs:
+        if s_ <= now_m < e_:                       # gerade geräuscharm
+            if e_ - now_m >= 1425:
+                return (2,)
+            frm = s_ if e_ - s_ < 1440 else floor15
+            return (1, int(frm) % 1440, int(e_) % 1440)
+        if s_ > now_m:                             # nächstes Fenster
+            e_eff = min(e_, s_ + 1425)
+            if s_ - now_m < 1440 and not _inside(now_i % 1440, int(s_) % 1440, int(e_eff) % 1440):
+                return (1, int(s_) % 1440, int(e_eff) % 1440)
+            return (0,)
+    return (0,)
+
+
+def sched_label(tg: Any) -> str:
+    if not tg:
+        return "–"
+    if tg[0] == 1:
+        return f"Auto {_m2t(tg[1])}–{_m2t(tg[2])}"
+    return SILENT_MODES.get(tg[0], str(tg[0]))
+
+
 _RE_TEL = re.compile(r"\(0x0?(486|484|4A7)\)|\b(?:0x)?0?(486|484|4A7)\b", re.I)
 
 
@@ -280,7 +373,79 @@ class PowerLimit:
         st = dict(self.st)
         st["testing"] = bool(self._task and not self._task.done())
         st["learning"] = self.learning
-        return {"config": self.cfg, "dimprog": self.dcfg, "state": st, "live": self.live}
+        return {"config": self.cfg, "dimprog": self.dcfg, "state": st, "live": self.live, "silent_sched": self.sched}
+
+    # ------------------------------------------------------------- v1.26.0 Zeitprogramm geräuscharmer Betrieb
+    @property
+    def sched(self) -> dict[str, Any]:
+        d = self.mgr.vdata(VENDOR_BOSCH).setdefault("silent_sched", {})
+        if not isinstance(d.get("days"), list) or len(d["days"]) != 7:
+            d["days"] = [list(SCHED_DEFAULT_DAY) for _ in range(7)]
+        d.setdefault("enabled", False)
+        return d
+
+    async def async_save_sched(self, cmd: dict[str, Any]) -> None:
+        """cmd: {"days": [0..6], "points": [...]} speichert Schaltpunkte; {"enabled": bool} schaltet das Programm."""
+        sc = self.sched
+        if "points" in cmd:
+            pts = clean_points(cmd["points"])
+            if not pts:
+                raise ValueError("Mindestens ein Schaltpunkt")
+            for d in cmd.get("days") or []:
+                if 0 <= int(d) <= 6:
+                    sc["days"][int(d)] = [dict(p) for p in pts]
+            sc["custom"] = True
+        if "enabled" in cmd:
+            on = bool(cmd["enabled"])
+            if on and self.st.get("active") and self.cfg.get("method") == "silent":
+                raise RuntimeError("Die Dimmung (Weg C) nutzt gerade den geräuscharmen Betrieb – erst Dimmung ausschalten")
+            if on and not sc.get("custom"):
+                # erstes Einschalten: das bisherige Fenster der WP übernehmen
+                m, f, t = (self._extra.get(f"silent_{k}") for k in ("mode", "from", "to"))
+                if m == 1 and f is not None and t is not None and f != t:
+                    sc["days"] = [[{"time": _m2t(min(f, t)), "mode": "off" if f > t else "on"},
+                                   {"time": _m2t(max(f, t)), "mode": "on" if f > t else "off"}] for _ in range(7)]
+                sc["custom"] = True
+            sc["enabled"] = on
+        sc["target"] = None            # beim nächsten Durchlauf neu anwenden
+        await self.mgr.async_save()
+        if sc["enabled"]:
+            await self._sched_apply()
+
+    def _sched_now(self) -> tuple:
+        now = dt_util.now()
+        di = now.weekday()
+        days = [self.sched["days"][(di + i) % 7] for i in range(7)]
+        return sched_target(days, now.hour * 60 + now.minute + now.second / 60)
+
+    async def _sched_apply(self) -> None:
+        sc = self.sched
+        if not sc.get("enabled"):
+            return
+        if self.st.get("active") and self.cfg.get("method") == "silent":
+            return                     # Weg C hat Vorrang
+        tg = self._sched_now()
+        if sc.get("target") == list(tg):
+            return
+        writes: list[tuple[str, int]] = []
+        if tg[0] == 1:
+            if self._extra.get("silent_from") != tg[1]:
+                writes.append(("from", tg[1]))
+            if self._extra.get("silent_to") != tg[2]:
+                writes.append(("to", tg[2]))
+        if self._extra.get("silent_mode") != tg[0]:
+            writes.append(("mode", tg[0]))
+        try:
+            for key, val in writes:
+                await self.async_set_silent(key, val, _sched=True)
+        except Exception as err:  # noqa: BLE001 - nächster Versuch beim nächsten Durchlauf
+            sc["last"] = f"{_hm_now()}: {sched_label(tg)} nicht geschrieben: {err_text(err)}"
+            _LOGGER.warning("Zeitprogramm geräuscharmer Betrieb: %s", err)
+            return
+        sc["target"] = list(tg)
+        sc["last"] = f"{_hm_now()}: {sched_label(tg)}" + ("" if writes else " (war schon eingestellt)")
+        self._log_add(f"Zeitprogramm geräuscharm: {sched_label(tg)}")
+        await self.mgr.async_save()
 
     @property
     def dcfg(self) -> dict[str, Any]:
@@ -557,12 +722,15 @@ class PowerLimit:
             ok = ok and res is True
         return ok
 
-    async def async_set_silent(self, key: str, value: Any) -> str:
+    async def async_set_silent(self, key: str, value: Any, _sched: bool = False) -> str:
         """Geräuscharmer Betrieb: eine Einstellung wie am UI 800 schreiben (1 Byte 0x484, Bestätigung der WP)."""
         if key not in SILENT_OFF:
             raise ValueError(f"unbekannte Einstellung {key}")
         value = int(value)
         silent_to_raw(key, value)   # prüft den Wertebereich
+        if not _sched and key in ("mode", "from", "to") and self.sched.get("enabled"):
+            self.sched["enabled"] = False   # v1.26.0: Betriebsart/Zeit von Hand → Zeitprogramm aus
+            self._log_add("Zeitprogramm geräuscharm aus (Einstellung von Hand)")
         if self._task and not self._task.done():
             raise RuntimeError("Ein Test läuft gerade – bitte warten oder Test abbrechen")
         async with self._lock:
@@ -974,6 +1142,10 @@ class PowerLimit:
         except Exception as err:  # noqa: BLE001
             st["last"] = f"{_hm_now()}: Fehler: {err_text(err)}"
             _LOGGER.warning("Leistungsbegrenzung: %s", err)
+        try:
+            await self._sched_apply()   # v1.26.0
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Zeitprogramm geräuscharmer Betrieb")
 
     # ------------------------------------------------------------- test
     def _log_add(self, text: str) -> None:
