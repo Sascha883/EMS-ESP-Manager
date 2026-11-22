@@ -30,6 +30,8 @@ CODECS: dict[str, tuple[int, bool, float, int, str, str]] = {
     "pct100": (2, False, 100.0, 1, "%", "num"),
     "enum":   (1, False, 1.0, 0, "", "enum"),
     "onoff":  (1, False, 1.0, 0, "", "enum"),
+    "hhmm":   (2, False, 1.0, 0, "", "time"),   # v1.25.2: Uhrzeit hh:mm (2 Bytes Stunde, Minute)
+    "min":    (2, False, 1.0, 0, "min", "num"),
     "u8":     (1, False, 1.0, 0, "", "num"),
     "u16":    (2, False, 1.0, 0, "", "num"),
     "u32":    (4, False, 1.0, 0, "", "num"),
@@ -48,6 +50,17 @@ CODECS: dict[str, tuple[int, bool, float, int, str, str]] = {
 
 ENUMS: dict[str, dict[int, str]] = {
     "onoff": {0: "Aus", 1: "Ein", 255: "Ein"},
+    # v1.25.2 – Auswahlwerte, am eigenen Regler mit dem Bedienteil abgeglichen (Texte wie im Brötje-Handbuch)
+    "neinja": {0: "Nein", 1: "Ja"},
+    "weekday": {1: "Montag", 2: "Dienstag", 3: "Mittwoch", 4: "Donnerstag", 5: "Freitag", 6: "Samstag", 7: "Sonntag"},
+    "schnellabs": {0: "Aus", 1: "Bis Reduziertsollwert", 2: "Bis Frostschutzsollwert"},
+    "estrich": {0: "Aus", 1: "Funktionsheizen", 2: "Belegreifheizen", 3: "Funktions-/Belegreifheizen",
+                4: "Belegreif-/Funktionsheizen", 5: "Manuell"},
+    "uebertemp": {0: "Aus", 1: "Heizbetrieb", 2: "Immer"},
+    "vlkorr": {0: "Keine", 1: "Mit Eingang H1", 2: "Mit Eingang H2"},
+    "ba_umsch": {0: "Keine", 1: "Schutzbetrieb", 2: "Reduziert", 3: "Komfort", 4: "Automatik"},
+    "ladevorrang": {0: "Absolut", 1: "Gleitend", 2: "Kein", 3: "MK gleitend, PK absolut"},
+    "zirk_frei": {0: "Zeitprogramm 3/HKP", 1: "Trinkwasser Freigabe", 2: "Zeitprogramm 4/TWW", 3: "Zeitprogramm 5"},
     "hk_mode": {0: "Schutzbetrieb", 1: "Automatik", 2: "Reduziert", 3: "Komfort"},
     "tww_mode": {0: "Aus", 1: "Ein", 2: "Eco"},
     "tww_release": {0: "immer (24 h)", 1: "nach Zeitprogrammen der Heizkreise", 2: "nach eigenem TWW-Zeitprogramm"},
@@ -122,6 +135,36 @@ PARAMS: list[tuple] = [
     (740, "213D0663", "temp", "Vorlauftemperatur mindestens", None, "", ("193D0663",)),
     (741, "213D0662", "temp", "Vorlauftemperatur höchstens", None, "", ("193D0662",)),
     (750, "2D3D0603", "pct", "Einfluss Raumtemperatur", None, "", ()),
+    # v1.25.2: selbst ermittelt am Brötje RVS43.345/100 mit dem Anlern-Modus (Bedienteil-Mitschnitt 19.11.2026,
+    # Nachweis im BSB-Log). „?“ = Datentyp aus Länge/Name geschlossen, Wert am Bedienteil noch vergleichen.
+    (726, "2D3D060B", "enum", "Heizkurve Adaption", "onoff", "", ()),
+    (742, "213D0A88", "temp", "Vorlaufsollwert Raumthermostat", None, "", ()),              # ?
+    (744, "2D3D0D85", "pct", "Soll-Einschaltverhältnis Raumthermostat", None, "", ()),      # ?
+    (760, "2D3D0614", "temp", "Raumtemperaturbegrenzung", None, "", ()),
+    (770, "2D3D0602", "temp", "Schnellaufheizung", None, "", ()),
+    (780, "2D3D05E8", "enum", "Schnellabsenkung", "schnellabs", "", ()),
+    (790, "2D3D0607", "u32", "Einschalt-Optimierung höchstens", None, "", ()),             # ? Einheit
+    (791, "2D3D0609", "u32", "Ausschalt-Optimierung höchstens", None, "", ()),             # ? Einheit
+    (800, "2D3D059E", "temp", "Reduziert-Anhebung Beginn", None, "", ()),
+    (801, "2D3D059D", "temp", "Reduziert-Anhebung Ende", None, "", ()),
+    (810, "213D063A", "enum", "Anlagenfrostschutz HK-Pumpe", "onoff", "", ()),            # ?
+    (820, "213D0674", "enum", "Überhitzschutz Pumpenkreis", "onoff", "", ()),
+    (830, "213D065D", "temp", "Mischerüberhöhung", None, "", ()),
+    (834, "213D065A", "u16", "Antrieb Laufzeit", None, "", ()),                            # s
+    (850, "2D3D067B", "enum", "Estrich-Funktion", "estrich", "", ()),
+    (851, "2D3D068A", "temp", "Estrich Sollwert manuell", None, "", ()),
+    (856, "2D3D067C", "u8", "Estrich Tag aktuell", None, R, ()),
+    (857, "213D0B43", "u8", "Estrich Tage erfüllt", None, R, ()),
+    (861, "213D08C9", "enum", "Übertemperaturabnahme", "uebertemp", "", ()),
+    (870, "2D3D07C4", "enum", "Mit Pufferspeicher", "neinja", "", ()),
+    (872, "2D3D07C5", "enum", "Mit Vorregler/Zubringerpumpe", "neinja", "", ()),
+    (880, "213D04AD", "u8", "Pumpe Drehzahlreduktion", None, "", ()),                      # ? Auswahl
+    (882, "053D115E", "pct", "Pumpendrehzahl mindestens", None, "", ()),
+    (883, "053D115F", "pct", "Pumpendrehzahl höchstens", None, "", ()),
+    (888, "213D0E38", "u8", "Kennlinienkorrektur", None, "", ()),                          # ?
+    (890, "213D10C2", "u8", "Vorlaufsollwertkorrektur Drehzahl", None, "", ()),            # ?
+    (899, "053D0D40", "enum", "Vorlaufsollwertkorrektur", "vlkorr", "", ()),
+    (900, "053D07BE", "enum", "Betriebsartumschaltung", "ba_umsch", "", ()),
     # Heizkreis 2
     (1000, "2E3D0574", "enum", "Betriebsart", "hk_mode", "", ()),
     (1010, "2E3D058E", "temp", "Raumsollwert Komfort", None, "", ()),
@@ -144,6 +187,21 @@ PARAMS: list[tuple] = [
     (1620, "253D0722", "enum", "Freigabe Warmwasserladung", "tww_release", "", ()),
     (1640, "313D0759", "enum", "Legionellenschutz", "legio", "", ()),
     (1645, "313D06BC", "temp", "Legionellenschutz Temperatur", None, "", ("113D06BC",)),
+    # v1.25.2: selbst ermittelt (Anlern-Modus, RVS43.345/100, 19.11.2026)
+    (1601, "253D1158", "u8", "Betriebsartwahl Eco", None, "", ()),                         # ? Auswahl
+    (1614, "313D06B8", "temp", "Warmwasser Nennsollwert höchstens", None, "", ()),
+    (1616, "253D1BEE", "temp", "Warmwasser Sollwert Photovoltaik", None, "", ()),          # ?
+    (1630, "313D0721", "enum", "Ladevorrang", "ladevorrang", "", ()),
+    (1641, "313D0738", "u8", "Legionellenschutz periodisch (Tage)", None, "", ()),
+    (1642, "313D075E", "enum", "Legionellenschutz Wochentag", "weekday", "", ()),
+    (1644, "313D075A", "hhmm", "Legionellenschutz Zeitpunkt", None, "", ()),
+    (1646, "313D0496", "min", "Legionellenschutz Verweildauer", None, "", ()),               # ? Einheit
+    (1647, "313D08AB", "enum", "Legionellenschutz Zirkulationspumpe", "onoff", "", ()),
+    (1648, "313D1294", "temp", "Legionellenschutz Zirkulation Temperaturdifferenz", None, "", ()),  # ?
+    (1660, "253D072E", "enum", "Zirkulationspumpe Freigabe", "zirk_frei", "", ()),
+    (1661, "253D0689", "enum", "Zirkulationspumpe Taktbetrieb", "onoff", "", ()),
+    (1663, "253D077E", "temp", "Zirkulationssollwert", None, "", ()),
+    (1680, "053D0E84", "u8", "Warmwasser Betriebsartumschaltung", None, "", ()),             # ? Auswahl (Bedienteil-SET 1→2→1)
     # Kessel
     (2210, "0D3D092C", "temp", "Kesselsollwert mindestens", None, "", ("2D3D092C",)),
     (2212, "0D3D092B", "temp", "Kesselsollwert höchstens", None, "", ("2D3D0952",)),

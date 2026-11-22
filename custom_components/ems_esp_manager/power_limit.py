@@ -10,6 +10,11 @@ Two ways to make the heat pump reduce its power, both only over the EMS bus:
   controller, so it is not switched more often than every ``min_gap`` seconds.
 * ``limit`` – the power limit in W is written directly (EMS-ESP
   ``boiler/hppowerlimit`` → telegram 0x4A7).  Not every heat pump answers it.
+* ``silent`` (v1.24.4, Weg C – Software-Drossel) – the silent mode of the heat
+  pump (UI 800 „Geräuscharmer Betrieb“, telegram 0x484) is set to „Dauerhaft an“
+  with the chosen reduction level (0x484 offset 64 = power reduction).  The
+  previous mode/level is written back when dimming ends.  The active limit is
+  checked in 0x048D offset 18.
 
 The test (button in the panel) reads everything that matters, requests the raw
 telegrams 0x486 / 0x484 / 0x4A7, writes each way once, watches the readback and
@@ -42,13 +47,14 @@ MAX_LOG = 400
 MAX_LEARN_LOG = 600
 
 DEFAULTS: dict[str, Any] = {
-    "method": "input",        # input | limit
+    "method": "input",        # input | limit | silent
     "input": 1,               # external input 1..4 (1 recommended, see EMS-ESP offset 27)
     "limit_w": 4200,          # W written to hppowerlimit while dimmed
     "trigger_entity": "",     # optional: on = dim, off = normal
     "max_minutes": 120,       # automatic end of a manual dimming (0 = never)
     "min_gap": 300,           # s between two writes of the input setting (controller memory)
     "observe_s": 60,          # s the test keeps each way active
+    "silent_level": 3,        # v1.24.4 Weg C: Stufe 1–4 der Leistungsreduktion (−30/−40/−50/−60 %)
 }
 
 # values read for the test / status (EMS-ESP short names)
@@ -57,6 +63,7 @@ WATCH = (
     "hpin1opt", "hpin2opt", "hpin3opt", "hpin4opt",
     "hppowerlimit", "hpmaxpower", "powerreduction", "pvmaxcomp", "maxheatcomp",
     "hpcurrpower", "hppower", "hpcompspd", "hpcompon", "hpactivity",
+    "silentmode", "silentfrom", "silentto", "mintempsilent",
 )
 WRITE_KEYS = ("hpin1opt", "hpin2opt", "hpin3opt", "hpin4opt", "hppowerlimit", "hpmaxpower", "powerreduction", "pvmaxcomp", "maxheatcomp")
 UNITS = {"hpcurrpower": "W", "hppowerlimit": "W", "hppower": "kW", "hpmaxpower": "%", "powerreduction": "%",
@@ -73,18 +80,36 @@ BIT_TEXT = {
     "comp": "Kompressor sperren", "aux": "Zuheizerbetr. sperren", "cool": "Kühlbetrieb sperren",
     "heat": "Heizbetrieb sperren", "dhw": "Warmwasser sperren", "pv": "Photovoltaikanlage",
     "prot": "Überhitzungsschutz", "pres": "Druckschalter",
+    "dimm": "EVU Dimmen",
 }
-# Menüpunkte je Eingang, wie sie das UI 800 an der CS5800i zeigt (Fotos + Bus-Log 04.11.2026).
-# Jeder Punkt = 1 Byte in 0x486, das UI 800 schreibt ihn einzeln, die WP bestätigt per Broadcast.
-UI_MENU = {1: ("inv", "aux", "evu1"), 2: ("inv", "aux", "heat"), 3: ("inv", "aux", "prot"), 4: ("inv", "aux", "pv")}
+# Menüpunkte je Eingang, wie sie das UI 800 (Software 47.12) zeigt – Fotos + Bus-Log 12.11.2026.
+# Jeder Punkt = 1 Byte in 0x486, das UI 800 schreibt ihn einzeln (teils als Block), die WP bestätigt per Broadcast.
+_UI_ALL = ("inv", "aux", "dhw", "heat", "prot", "pv")
+UI_MENU = {1: ("inv", "aux", "dhw", "heat", "prot", "dimm", "pv"), 2: _UI_ALL, 3: _UI_ALL, 4: _UI_ALL}
+# Funktionen, die EMS-ESP im hpinNopt-String nicht kennt: nur roh über den Bus (system/send / system/read).
+# v1.24.3: „EVU Dimmen“ (§14a) an Eingang 1 = 0x486 Offset 57 (Bus-Log 12.11.2026, UI 800 47.12).
+EXTRA_BITS: dict[int, dict[str, int]] = {1: {"dimm": 57}}
 # 0x486-Offsets (EMS-ESP boiler.cpp, bestätigt im Bus-Log 04.11.2026): Eingang 1..3 = Basis + (n-1)
 OFF_123 = {"inv": 0, "evu1": 3, "evu2": 6, "evu3": 9, "comp": 12, "aux": 15, "cool": 18,
            "heat": 21, "dhw": 24, "pres": 30, "prot": 36, "pv": 39}
-OFF_4 = {"inv": 42, "comp": 43, "aux": 44, "cool": 45, "heat": 46, "dhw": 47, "pres": 49, "prot": 50, "pv": 52}
+# v1.24.3: Überhitzungsschutz an Eingang 4 = Offset 51 (Bus-Log 12.11.2026, vorher 50 laut EMS-ESP)
+OFF_4 = {"inv": 42, "comp": 43, "aux": 44, "cool": 45, "heat": 46, "dhw": 47, "pres": 49, "prot": 51, "pv": 52}
+
+
+def is_extra(n: int, bit: str) -> bool:
+    """Funktion, die nur roh über den Bus geschrieben werden kann (nicht im hpinNopt-String)."""
+    return bit in EXTRA_BITS.get(int(n), {})
+
+
+def bit_names(n: int) -> tuple[str, ...]:
+    """Alle schaltbaren Funktionen von Eingang n (hpinNopt-String + rohe Zusatzfunktionen)."""
+    return (BITS_4 if n == 4 else BITS_123) + tuple(EXTRA_BITS.get(int(n), {}))
 
 
 def bit_offset(n: int, bit: str) -> int:
     """0x486-Offset der Funktion ``bit`` an Eingang n."""
+    if is_extra(n, bit):
+        return EXTRA_BITS[int(n)][bit]
     return OFF_4[bit] if n == 4 else OFF_123[bit] + n - 1
 # Dimm-Testprogramm: Schritte, die nacheinander an einem freien Eingang ausprobiert werden
 DIM_STEPS: dict[str, dict[str, Any]] = {
@@ -95,7 +120,9 @@ DIM_STEPS: dict[str, dict[str, Any]] = {
     "heat": {"label": "Heizbetrieb sperren", "bits": ("heat",)},
     "dhw": {"label": "Warmwasser sperren", "bits": ("dhw",)},
     "pv": {"label": "Photovoltaikanlage (PV max. Kompressorleistung)", "bits": ("pv",)},
+    "dimm": {"label": "EVU Dimmen (§14a, Leistungsverringerung)", "bits": ("dimm",), "inputs": (1,)},
     "mod": {"label": "Begrenzungswert (ohne Funktion)", "bits": (), "mod": True},
+    "silent": {"label": "Geräuscharmer Betrieb (Stufe 1–4, ohne Eingang)", "bits": (), "silent": True},
 }
 DIM_DEFAULTS: dict[str, Any] = {
     "input": 2,             # freier Eingang (keine Funktion, nicht verdrahtet)
@@ -111,6 +138,57 @@ DIM_LIMITS = {"input": (1, 4), "active_s": (60, 1800), "base_s": (30, 300), "wai
               "recover_s": (60, 3600), "mod": (0, 100), "pr": (0, 60)}
 EVU_STEPS = ("evu1", "evu2", "evu3")
 RUN_W = 300   # ab dieser Leistung gilt der Kompressor als laufend
+
+# v1.24.4: Geräuscharmer Betrieb – UI 800 schreibt je Einstellung 1 Byte in 0x484 (HPSilentMode),
+# die WP bestätigt per Broadcast (Bus-Log + Fotos 12./13.11.2026, UI 800 47.12, CS5800i/CS6800i).
+SILENT_TYPE = 0x484
+SILENT_OFF = {"mode": 10, "mintemp": 11, "from": 52, "to": 53, "level": 64}
+SILENT_TEXT = {"mode": "Betriebsart", "mintemp": "Abschalten unterhalb Außentemperatur", "from": "Von", "to": "Bis",
+               "level": "Leistungsreduktion"}
+SILENT_MODES = {0: "Aus", 1: "Auto", 2: "Dauerhaft an"}
+SILENT_INACTIVE = -31          # 0xE1 = „Inaktiv“ (Wertebereich laut ValueConfig 0xF9: E1, E2 … 14)
+SILENT_LEVELS = (1, 2, 3, 4)   # Stufe n = Byte n+2 = (n+2)·10 % Leistungsreduktion (= EMS-ESP powerreduction)
+LIMIT_TYPE, LIMIT_OFF = 0x48D, 18   # aktives Limit der WP (Stufe 1 = 75, 2 = 52, 3 = 46, ohne = 90)
+SPEED_TYPE, SPEED_OFF = 0x4AA, 8    # vermutlich Kompressor-Solldrehzahl (2 Byte)
+
+
+def silent_to_raw(key: str, value: Any) -> int:
+    """Wert in Anzeige-Einheit (Betriebsart 0–2, °C, Minuten, Stufe) → Byte für 0x484."""
+    v = int(value)
+    if key == "mode" and v in SILENT_MODES:
+        return v
+    if key == "mintemp" and (v == SILENT_INACTIVE or -30 <= v <= 20):
+        return v & 0xFF
+    if key in ("from", "to") and 0 <= v < 1440 and v % 15 == 0:
+        return v // 15
+    if key == "level" and v in SILENT_LEVELS:
+        return v + 2
+    raise ValueError(f"ungültiger Wert für {SILENT_TEXT.get(key, key)}: {value}")
+
+
+def silent_from_raw(key: str, b: int) -> int:
+    if key == "mintemp":
+        return b - 256 if b > 127 else b
+    if key in ("from", "to"):
+        return b * 15
+    if key == "level":
+        return b - 2
+    return b
+
+
+def silent_label(key: str, v: Any) -> str:
+    if v is None:
+        return "–"
+    v = int(v)
+    if key == "mode":
+        return SILENT_MODES.get(v, str(v))
+    if key == "mintemp":
+        return "Inaktiv" if v == SILENT_INACTIVE else f"{v} °C"
+    if key in ("from", "to"):
+        return f"{v // 60:02d}:{v % 60:02d}"
+    if key == "level":
+        return f"Stufe {v} (−{(v + 2) * 10} %)"
+    return str(v)
 
 _RE_TEL = re.compile(r"\(0x0?(486|484|4A7)\)|\b(?:0x)?0?(486|484|4A7)\b", re.I)
 
@@ -174,6 +252,7 @@ class PowerLimit:
         self._task: asyncio.Task | None = None
         self.live: dict[str, Any] = {}
         self._meta: dict[str, dict] = {}
+        self._extra: dict[str, Any] = {}   # v1.24.3: roh gelesene Zusatzfunktionen (hpin1dimm …)
         self._ltask: asyncio.Task | None = None
         self._learn_stop: asyncio.Event | None = None
 
@@ -190,7 +269,9 @@ class PowerLimit:
         clean = {k: cfg[k] for k in DEFAULTS if k in cfg}
         if "input" in clean:
             clean["input"] = min(4, max(1, int(clean["input"])))
-        if "method" in clean and clean["method"] not in ("input", "limit"):
+        if "silent_level" in clean:
+            clean["silent_level"] = min(4, max(1, int(clean["silent_level"])))
+        if "method" in clean and clean["method"] not in ("input", "limit", "silent"):
             clean.pop("method")
         self.mgr.vdata(VENDOR_BOSCH)["plim"] = {**self.cfg, **clean}
         await self.mgr.async_save()
@@ -318,8 +399,212 @@ class PowerLimit:
                 m = self._meta.get(key) or {}
                 out[key] = {"v": data[key], "w": m.get("w", key in WRITE_KEYS), "u": m.get("u") or UNITS.get(key)}
         self.live = {k: v.get("v") for k, v in out.items()}
+        self.live.update(self._extra)
         self.live["t"] = time.time()
         return out
+
+    async def read_extra(self, max_age: float = 120.0) -> None:
+        """Zusatzfunktionen (z. B. EVU Dimmen, 0x486 Offset 57) direkt bei der WP lesen – höchstens alle ``max_age`` s.
+
+        EMS-ESP liest 0x486 nur bis Offset 52, diese Werte stehen deshalb nicht in hpinNopt.
+        """
+        if (self._task and not self._task.done()) or self._lock.locked() or self.learning:
+            return
+        if time.time() - float(self._extra.get("t_extra") or 0) < max_age:
+            return
+        rt = self._rt()
+        if rt is None or rt.log is None:
+            return
+        async with self._lock:
+            old = await self._bus_on(rt)
+            try:
+                for n, bits in EXTRA_BITS.items():
+                    for bit, off in bits.items():
+                        v = await self._read_bit_bus(rt, off)
+                        if v is not None:
+                            self._extra[f"hpin{n}{bit}"] = int(v)
+                await self._read_silent(rt)   # v1.24.4: geräuscharmer Betrieb (0x484) + aktives Limit (0x048D)
+            finally:
+                await self._bus_off(rt, old)
+        self._extra["t_extra"] = time.time()
+        self.live.update(self._extra)
+
+    async def _send_486(self, rt, off: int, value: int) -> None:
+        """1 Byte in 0x486 schreiben wie das UI 800 (EMS+ Typ auf dem Bus = 0x0386)."""
+        await self._send_raw(rt, 0x486, off, value)
+
+    async def _send_raw(self, rt, typ: int, off: int, value: int) -> None:
+        """1 Byte in ein EMS+-Telegramm der WP schreiben (wie das UI 800)."""
+        from .schedule import _hex, _type_bytes, current_me
+
+        th, tl = _type_bytes(typ)
+        await rt.api.command("system", "send", _hex([current_me(rt), 0x08, 0xFF, int(off), th, tl, int(value) & 0xFF]))
+
+    @staticmethod
+    def _raw_listener(typ: int, off: int, length: int, sink: list):
+        """Listener: Telegramme der WP (0x08) vom Typ ``typ`` → sink (Zeile, {Offset: Byte}) für off … off+length-1."""
+        from .input_learn import parse_line
+
+        def _listen(line: str) -> None:
+            tel = parse_line(line)
+            if tel is None or tel.type != typ or tel.src != 0x08 or not tel.data:
+                return
+            got = {o: tel.data[o - tel.offset] for o in range(off, off + length)
+                   if tel.offset <= o < tel.offset + len(tel.data)}
+            if got:
+                sink.append((line.strip(), got))
+        return _listen
+
+    async def _read_raw(self, rt, typ: int, off: int, length: int = 1, timeout: float = 5.0) -> dict[int, int]:
+        """Bytes direkt bei der WP lesen (system/read 08 <typ> <off> <len>) → {Offset: Byte}."""
+        got: list = []
+        lis = self._raw_listener(typ, off, length, got)
+        rt.log.listeners.append(lis)
+        try:
+            await rt.api.command("system", "read", f"08 {typ:X} {off} {length}")
+            t0 = time.time()
+            while time.time() - t0 < timeout:
+                await asyncio.sleep(0.3)
+                if got and len({o for _, d in got for o in d}) >= length:
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            if lis in rt.log.listeners:
+                rt.log.listeners.remove(lis)
+        out: dict[int, int] = {}
+        for _, d in got:
+            out.update(d)
+        return out
+
+    async def _write_raw(self, rt, typ: int, off: int, value: int, timeout: float = 10.0) -> tuple[bool | None, list[str]]:
+        """1 Byte schreiben und auf die Bestätigung der WP warten (Broadcast bzw. gezieltes Nachlesen).
+
+        Rückgabe wie ``_write_bit_bus``: True = bestätigt, False = WP meldet anderen Wert, None = keine Antwort.
+        """
+        want = int(value) & 0xFF
+        seen: list = []
+        lis = self._raw_listener(typ, off, 1, seen)
+        rt.log.listeners.append(lis)
+        try:
+            await self._send_raw(rt, typ, off, want)
+            t0, asked = time.time(), False
+            while time.time() - t0 < timeout:
+                await asyncio.sleep(0.5)
+                if any(d.get(off) == want for _, d in seen):
+                    break
+                if not asked and time.time() - t0 > 3:
+                    asked = True
+                    try:
+                        await rt.api.command("system", "read", f"08 {typ:X} {off} 1")
+                    except Exception:  # noqa: BLE001
+                        pass
+        finally:
+            if lis in rt.log.listeners:
+                rt.log.listeners.remove(lis)
+        lines = list(dict.fromkeys(x for x, _ in seen))
+        if any(d.get(off) == want for _, d in seen):
+            return True, lines
+        return (False if seen else None), lines
+
+    # ------------------------------------------------------------- geräuscharmer Betrieb (0x484)
+    async def _read_silent(self, rt) -> dict[str, Any]:
+        """Geräuscharmen Betrieb direkt bei der WP lesen (Bus muss an sein) → {mode, mintemp, from, to, level, limit, spd}."""
+        raw: dict[int, int] = {}
+        raw.update(await self._read_raw(rt, SILENT_TYPE, 10, 2))
+        raw.update(await self._read_raw(rt, SILENT_TYPE, 52, 2))
+        raw.update(await self._read_raw(rt, SILENT_TYPE, 64, 1))
+        out: dict[str, Any] = {}
+        for key, off in SILENT_OFF.items():
+            if off in raw:
+                out[key] = silent_from_raw(key, raw[off])
+                self._extra[f"silent_{key}"] = out[key]
+        out.update(await self._read_effect(rt))
+        self._extra["t_silent"] = time.time()
+        self.live.update(self._extra)
+        return out
+
+    async def _read_effect(self, rt) -> dict[str, Any]:
+        """Wirkung der Drossel: aktives Limit (0x048D Offset 18) und Solldrehzahl (0x04AA Offset 8, 2 Byte)."""
+        out: dict[str, Any] = {}
+        lim = await self._read_raw(rt, LIMIT_TYPE, LIMIT_OFF, 1)
+        if LIMIT_OFF in lim:
+            out["limit"] = self._extra["silent_limit"] = lim[LIMIT_OFF]
+        spd = await self._read_raw(rt, SPEED_TYPE, SPEED_OFF, 2)
+        if SPEED_OFF in spd and SPEED_OFF + 1 in spd:
+            out["spd"] = self._extra["silent_spd"] = (spd[SPEED_OFF] << 8) | spd[SPEED_OFF + 1]
+        self.live.update(self._extra)
+        return out
+
+    async def _silent_write(self, rt, key: str, value: int) -> tuple[bool | None, list[str]]:
+        """Eine Einstellung (Anzeige-Einheit) schreiben, Bestätigung der WP abwarten, Live-Wert nachführen."""
+        res, lines = await self._write_raw(rt, SILENT_TYPE, SILENT_OFF[key], silent_to_raw(key, value))
+        if res is True:
+            self._extra[f"silent_{key}"] = int(value)
+            self.live.update(self._extra)
+        return res, lines
+
+    async def _silent_restore(self, rt, mode: int | None, level: int | None) -> bool:
+        """Betriebsart und Stufe zurückschreiben (Betriebsart zuerst, damit die Drossel sofort endet)."""
+        ok = True
+        for key, val in (("mode", mode), ("level", level)):
+            if val is None:
+                continue
+            res, _ = await self._silent_write(rt, key, int(val))
+            if res is not True:
+                await asyncio.sleep(2)
+                res, _ = await self._silent_write(rt, key, int(val))
+            ok = ok and res is True
+        return ok
+
+    async def async_set_silent(self, key: str, value: Any) -> str:
+        """Geräuscharmer Betrieb: eine Einstellung wie am UI 800 schreiben (1 Byte 0x484, Bestätigung der WP)."""
+        if key not in SILENT_OFF:
+            raise ValueError(f"unbekannte Einstellung {key}")
+        value = int(value)
+        silent_to_raw(key, value)   # prüft den Wertebereich
+        if self._task and not self._task.done():
+            raise RuntimeError("Ein Test läuft gerade – bitte warten oder Test abbrechen")
+        async with self._lock:
+            st = self.st
+            prev = st.get("prev") or {}
+            if key in ("mode", "level") and st.get("active") and prev.get("method") == "silent":
+                raise RuntimeError("Die Dimmung (Weg C) nutzt gerade den geräuscharmen Betrieb – erst Dimmung ausschalten")
+            what = f"{SILENT_TEXT[key]} → {silent_label(key, value)}"
+            off = SILENT_OFF[key]
+            rt = self._rt()
+            if rt is not None and rt.log is not None:
+                old = await self._bus_on(rt)
+                try:
+                    res, _lines = await self._silent_write(rt, key, value)
+                    if res is True and key in ("mode", "level"):
+                        await asyncio.sleep(2)
+                        await self._read_effect(rt)
+                finally:
+                    await self._bus_off(rt, old)
+                ok = res is True
+                msg = (f"Geräuscharmer Betrieb: {what} → "
+                       + {True: f"übernommen (WP bestätigt 0x484 Offset {off})",
+                          False: f"NICHT übernommen (WP meldet für 0x484 Offset {off} einen anderen Wert)",
+                          None: f"keine Bestätigung der WP (0x484 Offset {off})"}[res])
+            else:
+                # ohne Log-Verbindung: über EMS-ESP (ohne Bestätigung der WP)
+                if key == "mintemp" and value == SILENT_INACTIVE:
+                    raise RuntimeError("„Inaktiv“ geht nur direkt über den Bus – keine Log-Verbindung zu EMS-ESP")
+                cmd, val = {"mode": ("silentmode", value), "mintemp": ("mintempsilent", value),
+                            "from": ("silentfrom", value), "to": ("silentto", value),
+                            "level": ("powerreduction", (value + 2) * 10)}[key]
+                await self.write(cmd, val)
+                self._extra[f"silent_{key}"] = value
+                self.live.update(self._extra)
+                ok = True
+                msg = f"Geräuscharmer Betrieb: {what} → an EMS-ESP gesendet ({cmd}, ohne Bestätigung der WP)"
+            self._log_add(msg)
+            st["last"] = f"{_hm_now()}: {msg}"
+            await self.mgr.async_save()
+            if not ok:
+                raise RuntimeError(msg)
+            return msg
 
     async def write(self, cmd: str, value: Any) -> None:
         await self._api().command(DEVICE, cmd, value)
@@ -387,7 +672,10 @@ class PowerLimit:
         names = BITS_4 if n == 4 else BITS_123
         rt.log.listeners.append(lis)
         try:
-            await self.write(f"hpin{n}opt", ("x" * names.index(bit)) + ("1" if on else "0"))
+            if is_extra(n, bit):
+                await self._send_486(rt, off, want)   # nicht im hpinNopt-String: roh wie das UI 800
+            else:
+                await self.write(f"hpin{n}opt", ("x" * names.index(bit)) + ("1" if on else "0"))
             t0, asked = time.time(), False
             while time.time() - t0 < timeout:
                 await asyncio.sleep(0.5)
@@ -403,6 +691,9 @@ class PowerLimit:
             if lis in rt.log.listeners:
                 rt.log.listeners.remove(lis)
         lines = list(dict.fromkeys(x for x, _ in seen))
+        if seen and is_extra(n, bit):
+            self._extra[f"hpin{n}{bit}"] = int(seen[-1][1])
+            self.live.update(self._extra)
         if any(v == want for _, v in seen):
             return True, lines
         return (False if seen else None), lines
@@ -429,13 +720,17 @@ class PowerLimit:
             return "nicht aktiv"
         if on:
             method = cfg["method"]
-            if method == "input":
-                n = int(cfg["input"])
+            if method in ("input", "silent"):
                 last = float(st.get("last_write") or 0)
                 if not force and now - last < cfg["min_gap"]:
-                    msg = f"wartet – Eingang zuletzt vor {int(now - last)} s geschaltet (min. {cfg['min_gap']} s)"
+                    msg = f"wartet – zuletzt vor {int(now - last)} s geschaltet (min. {cfg['min_gap']} s)"
                     st["last"] = f"{_hm_now()}: {msg}"
                     return msg
+            if method == "silent":
+                what = await self._silent_on(int(cfg["silent_level"]))
+                st["last_write"] = now
+            elif method == "input":
+                n = int(cfg["input"])
                 inv = await self._inv(n)
                 if inv is None:
                     raise RuntimeError(f"hpin{n}opt nicht lesbar – liefert EMS-ESP den Wert?")
@@ -470,13 +765,49 @@ class PowerLimit:
         else:
             prev = st.get("prev") or {}
             await self._restore(prev)
-            st["last_write"] = now if prev.get("method") == "input" else st.get("last_write")
+            st["last_write"] = now if prev.get("method") in ("input", "silent") else st.get("last_write")
             st.update(active=False, prev=None, until=None, why=None,
                       last=f"{_hm_now()}: Dimmung aus ({why})")
             self._log_add(f"Dimmung AUS: {prev or '-'} zurückgeschrieben ({why})")
             _LOGGER.info("Leistungsbegrenzung aus (%s)", why)
         await self.mgr.async_save()
         return st["last"]
+
+    async def _silent_on(self, lvl: int) -> str:
+        """Weg C: geräuscharmer Betrieb „Dauerhaft an“ mit Stufe ``lvl``; vorherigen Zustand in st.prev merken."""
+        rt = self._rt()
+        if rt is None or rt.log is None:
+            raise RuntimeError("Weg C geht nur direkt über den Bus – keine Log-Verbindung zu EMS-ESP")
+        st = self.st
+        old = await self._bus_on(rt)
+        try:
+            cur = await self._read_silent(rt)
+            m0, l0 = cur.get("mode"), cur.get("level")
+            if m0 is None or l0 is None:
+                raise RuntimeError("Geräuscharmer Betrieb nicht lesbar (0x484) – Dimmung nicht gestartet")
+            if l0 not in SILENT_LEVELS:
+                l0 = None   # unbekannter Wert: Stufe beim Zurückstellen nicht anfassen
+            st["prev"] = {"method": "silent", "mode": m0, "level": l0}
+            ok = True
+            if l0 != lvl:
+                ok = (await self._silent_write(rt, "level", lvl))[0] is True
+            if ok and m0 != 2:
+                ok = (await self._silent_write(rt, "mode", 2))[0] is True
+            if not ok:
+                try:
+                    await self._silent_restore(rt, m0, l0)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug("silent mode rollback failed", exc_info=True)
+                st["prev"] = None
+                raise RuntimeError("Geräuscharmer Betrieb nicht übernommen (keine Bestätigung der WP über 0x484) – Dimmung nicht gestartet")
+            await asyncio.sleep(3)
+            eff = await self._read_effect(rt)
+        finally:
+            await self._bus_off(rt, old)
+        lim = eff.get("limit")
+        return (f"geräuscharmer Betrieb dauerhaft an, {silent_label('level', lvl)}"
+                + (f", Limit 0x048D = {lim}" if lim is not None else "")
+                + f"; vorher {silent_label('mode', m0)} / {silent_label('level', l0)}")
 
     async def async_set_input(self, n: int, bit: str | None = None, on: bool | None = None,
                               mod: int | None = None) -> str:
@@ -496,13 +827,12 @@ class PowerLimit:
         async with self._lock:
             st = self.st
             if bit is not None:
-                if bit not in names:
+                if bit not in bit_names(n):
                     raise ValueError(f"unbekannte Funktion {bit}")
                 prev = st.get("prev") or {}
                 if bit == "inv" and st.get("active") and prev.get("method") == "input" and int(prev.get("input", 0)) == n:
                     raise RuntimeError("Die Dimmung nutzt gerade diesen Eingang – erst Dimmung ausschalten")
-                idx = names.index(bit)
-                value = ("x" * idx) + ("1" if on else "0")
+                value = ("x" * names.index(bit)) + ("1" if on else "0") if not is_extra(n, bit) else ""
                 what = f"{BIT_TEXT.get(bit, bit)} {'ein' if on else 'aus'}"
                 check = lambda v: (decode_opt(v, n) or {}).get(bit) == bool(on)  # noqa: E731
             elif mod is not None:
@@ -515,6 +845,8 @@ class PowerLimit:
             else:
                 raise ValueError("nichts zu ändern")
             rt = self._rt()
+            if bit is not None and is_extra(n, bit) and (rt is None or rt.log is None):
+                raise RuntimeError(f"{BIT_TEXT.get(bit, bit)} geht nur direkt über den Bus – keine Log-Verbindung zu EMS-ESP")
             if bit is not None and rt is not None and rt.log is not None:
                 # wie das UI 800: 1 Byte schreiben, Bestätigung der WP (0x486-Telegramm) abwarten
                 off = bit_offset(n, bit)
@@ -558,12 +890,34 @@ class PowerLimit:
                              + str(int(prev.get("value") or 0)))
         elif prev.get("method") == "bit":
             n, bit = int(prev["input"]), str(prev["bit"])
+            if is_extra(n, bit):
+                rt = self._rt()
+                if rt is None:
+                    raise RuntimeError("Kein EMS-ESP verbunden")
+                await self._send_486(rt, bit_offset(n, bit), 1 if prev.get("on") else 0)
+                return
             names = BITS_4 if n == 4 else BITS_123
             await self.write(f"hpin{n}opt", ("x" * names.index(bit)) + ("1" if prev.get("on") else "0"))
         elif prev.get("method") == "input":
             await self.write(f"hpin{int(prev['input'])}opt", "1" if prev.get("inv") else "0")
         elif prev.get("method") == "limit":
             await self.write("hppowerlimit", int(prev.get("value") or 0))
+        elif prev.get("method") == "silent":
+            mode, level = prev.get("mode"), prev.get("level")
+            rt = self._rt()
+            if rt is not None and rt.log is not None:
+                old = await self._bus_on(rt)
+                try:
+                    ok = await self._silent_restore(rt, mode, level)
+                finally:
+                    await self._bus_off(rt, old)
+                if not ok:
+                    raise RuntimeError("Geräuscharmer Betrieb: Zurückstellen nicht von der WP bestätigt (0x484)")
+            else:   # z. B. Integration entfernt: über EMS-ESP
+                if mode is not None:
+                    await self.write("silentmode", int(mode))
+                if level is not None:
+                    await self.write("powerreduction", (int(level) + 2) * 10)
 
     async def async_tick(self) -> None:
         cfg, st = self.cfg, self.st
@@ -693,7 +1047,7 @@ class PowerLimit:
                     raw0 = (vals.get(f"hpin{n}opt") or {}).get("v")
                     d = decode_opt(raw0, n)
                     L(f"--- Eingang {n}: vorher {raw0 if raw0 is not None else '–'} → {opt_text(d)} ---")
-                    bits = (BITS_4 if n == 4 else BITS_123) if all_bits else UI_MENU[n]
+                    bits = bit_names(n) if all_bits else UI_MENU[n]
                     for bit in bits:
                         label = f"Eingang {n}: {BIT_TEXT[bit]}"
                         off = bit_offset(n, bit)
@@ -704,7 +1058,7 @@ class PowerLimit:
                             continue
                         cur = await self._read_bit_bus(rt, off)
                         src = "WP direkt"
-                        if cur is None and d is not None:
+                        if cur is None and d is not None and not is_extra(n, bit):
                             cur, src = (1 if d.get(bit) else 0), "EMS-ESP"
                         if cur is None:
                             L(f"{label} (Offset {off}): Ausgangswert nicht lesbar – übersprungen")
@@ -873,7 +1227,10 @@ class PowerLimit:
         L(f"EMS-ESP Manager {ver} · Home Assistant {getattr(self.hass.config, 'version', '') or ''}".rstrip(" ·"))
         cfg = self.cfg
         if plim:
-            L(f"Einstellung: Weg {'A (Eingang ' + str(cfg['input']) + ' invertieren)' if cfg['method'] == 'input' else 'B (Leistungsgrenze ' + str(cfg['limit_w']) + ' W)'}"
+            weg = ('A (Eingang ' + str(cfg['input']) + ' invertieren)' if cfg['method'] == 'input'
+                   else 'C (geräuscharmer Betrieb, ' + silent_label('level', cfg['silent_level']) + ')' if cfg['method'] == 'silent'
+                   else 'B (Leistungsgrenze ' + str(cfg['limit_w']) + ' W)')
+            L(f"Einstellung: Weg {weg}"
               f" · Beobachtung je Weg {cfg['observe_s']} s")
         rt = self._rt()
         if rt is None:
@@ -1215,6 +1572,11 @@ class PowerLimit:
                 if n == 4 and any(s in EVU_STEPS for s in steps):
                     L("Hinweis: Eingang 4 hat keine EVU-Sperrzeiten – diese Schritte werden ausgelassen.")
                     steps = [s for s in steps if s not in EVU_STEPS]
+                bad = [s for s in steps if DIM_STEPS[s].get("inputs") and n not in DIM_STEPS[s]["inputs"]]
+                for s in bad:
+                    L(f"Hinweis: Schritt „{DIM_STEPS[s]['label']}“ gibt es nur an Eingang "
+                      f"{', '.join(map(str, DIM_STEPS[s]['inputs']))} – ausgelassen.")
+                    steps.remove(s)
                 if "mod" in steps and n not in (1, 4):
                     L("Hinweis: Schritt „Begrenzungswert“ nur an Eingang 1 oder 4 möglich – ausgelassen.")
                     steps.remove("mod")
@@ -1237,50 +1599,52 @@ class PowerLimit:
                     await asyncio.sleep(3)
                 old_level = await self._bus_on(rt)
                 rt.log.listeners.append(_bus)
-                # Ausgangszustand des Eingangs
-                vals = await self.read()
-                raw = (vals.get(f"hpin{n}opt") or {}).get("v")
-                d = decode_opt(raw, n)
-                L(f"Eingang {n} vorher: {raw} → {opt_text(d)} · Zustand {(vals.get(f'hpin{n}') or {}).get('v')}")
-                if d is None:
-                    L(f"FEHLER: hpin{n}opt nicht lesbar – Programm nicht möglich.")
-                    res["gesamt"] = "Eingang nicht lesbar"
-                    return
-                if any(d.get(k) for k in BIT_TEXT if k != "inv"):
-                    L(f"FEHLER: Eingang {n} hat schon eine Funktion ({opt_text(d)}). Bitte einen freien, nicht "
-                      "verdrahteten Eingang wählen – sonst würde das Programm eine echte Funktion verändern.")
-                    res["gesamt"] = "Eingang nicht frei"
-                    return
-                orig = {"inv": bool(d["inv"]), "mod": d.get("mod")}
-                pending = [{"method": "bit", "input": n, "bit": "inv", "on": orig["inv"]}]
-                st["restore"] = pending
-                await self.mgr.async_save()
-                # Leistungsverringerung für die Dauer des Programms
-                pr = int(c.get("pr") or 0)
-                if pr:
-                    pr = max(30, min(60, int(round(pr / 10.0)) * 10))
-                    pr0 = _f((vals.get("powerreduction") or {}).get("v"))
-                    if pr0 is None:
-                        L("Leistungsverringerung (powerreduction) wird nicht geliefert – bleibt unverändert.")
-                    elif int(pr0) != pr:
-                        orig["pr"] = int(pr0)
-                        pending.append({"method": "value", "key": "powerreduction", "value": int(pr0)})
-                        st["restore"] = pending
-                        await self.mgr.async_save()
-                        await self.write("powerreduction", pr)
-                        got = await self._wait_value("powerreduction", lambda v: _f(v) is not None and int(_f(v)) == pr, timeout=20)
-                        L(f"Leistungsverringerung {int(pr0)} % → {pr} %: "
-                          + ("übernommen" if _f(got) is not None and int(_f(got)) == pr else f"NICHT übernommen ({got})"))
-                    else:
-                        L(f"Leistungsverringerung steht schon auf {pr} %.")
-                    st["prog_pr"] = pr
-                else:
-                    st["prog_pr"] = None
-                if orig["inv"]:
-                    L(f"Eingang {n} ist invertiert (offen = aktiv) – wird für das Programm auf „nicht invertiert“ gestellt.")
-                    if not await self._p_set(L, rt, n, "inv", False, "Eingang invertiert"):
-                        res["gesamt"] = "Eingang ließ sich nicht vorbereiten"
+                need_input = any(not DIM_STEPS[s].get("silent") for s in steps)
+                if need_input:
+                    # Ausgangszustand des Eingangs
+                    vals = await self.read()
+                    raw = (vals.get(f"hpin{n}opt") or {}).get("v")
+                    d = decode_opt(raw, n)
+                    L(f"Eingang {n} vorher: {raw} → {opt_text(d)} · Zustand {(vals.get(f'hpin{n}') or {}).get('v')}")
+                    if d is None:
+                        L(f"FEHLER: hpin{n}opt nicht lesbar – Programm nicht möglich.")
+                        res["gesamt"] = "Eingang nicht lesbar"
                         return
+                    if any(d.get(k) for k in BIT_TEXT if k != "inv"):
+                        L(f"FEHLER: Eingang {n} hat schon eine Funktion ({opt_text(d)}). Bitte einen freien, nicht "
+                          "verdrahteten Eingang wählen – sonst würde das Programm eine echte Funktion verändern.")
+                        res["gesamt"] = "Eingang nicht frei"
+                        return
+                    orig = {"inv": bool(d["inv"]), "mod": d.get("mod")}
+                    pending = [{"method": "bit", "input": n, "bit": "inv", "on": orig["inv"]}]
+                    st["restore"] = pending
+                    await self.mgr.async_save()
+                    # Leistungsverringerung für die Dauer des Programms
+                    pr = int(c.get("pr") or 0)
+                    if pr:
+                        pr = max(30, min(60, int(round(pr / 10.0)) * 10))
+                        pr0 = _f((vals.get("powerreduction") or {}).get("v"))
+                        if pr0 is None:
+                            L("Leistungsverringerung (powerreduction) wird nicht geliefert – bleibt unverändert.")
+                        elif int(pr0) != pr:
+                            orig["pr"] = int(pr0)
+                            pending.append({"method": "value", "key": "powerreduction", "value": int(pr0)})
+                            st["restore"] = pending
+                            await self.mgr.async_save()
+                            await self.write("powerreduction", pr)
+                            got = await self._wait_value("powerreduction", lambda v: _f(v) is not None and int(_f(v)) == pr, timeout=20)
+                            L(f"Leistungsverringerung {int(pr0)} % → {pr} %: "
+                              + ("übernommen" if _f(got) is not None and int(_f(got)) == pr else f"NICHT übernommen ({got})"))
+                        else:
+                            L(f"Leistungsverringerung steht schon auf {pr} %.")
+                        st["prog_pr"] = pr
+                    else:
+                        st["prog_pr"] = None
+                    if orig["inv"]:
+                        L(f"Eingang {n} ist invertiert (offen = aktiv) – wird für das Programm auf „nicht invertiert“ gestellt.")
+                        if not await self._p_set(L, rt, n, "inv", False, "Eingang invertiert"):
+                            res["gesamt"] = "Eingang ließ sich nicht vorbereiten"
+                            return
                 for i, key in enumerate(steps, 1):
                     if self._stopped():
                         break
@@ -1292,11 +1656,29 @@ class PowerLimit:
                     await self.mgr.async_save()
             finally:
                 try:
+                    # v1.24.4: geräuscharmer Betrieb, falls ein Schritt abgebrochen wurde
+                    if rt is not None:
+                        for p in [x for x in (st.get("restore") or []) if x.get("method") == "silent"]:
+                            if await self._silent_restore(rt, p.get("mode"), p.get("level")):
+                                L(f"  Geräuscharmer Betrieb zurück: {silent_label('mode', p.get('mode'))} / {silent_label('level', p.get('level'))}")
+                                st["restore"] = [x for x in st["restore"] if x is not p] or None
+                            else:
+                                L("  Geräuscharmer Betrieb: Zurückstellen NICHT bestätigt – wird alle 30 s wiederholt.")
                     if rt is not None and orig is not None:
                         st["prog"] = {"step": None, "phase": "zurückstellen", "until": None}
                         L("--- Zurückstellen ---")
                         failed: list[dict] = []   # v1.22.2: nicht bestätigte Bits bleiben zum Nachholen gespeichert
-                        for bit in ("inv",) + tuple(b for k in DIM_STEPS for b in DIM_STEPS[k]["bits"] if not (n == 4 and b in EVU_STEPS)):
+                        # v1.24.3: Zusatzfunktionen (EVU Dimmen) auf ihren Ausgangswert, falls ein Schritt abgebrochen wurde
+                        for p in list(st.get("restore") or []):
+                            if p.get("method") == "bit" and is_extra(int(p.get("input", 0)), str(p.get("bit"))):
+                                pn, pb, pw = int(p["input"]), str(p["bit"]), bool(p.get("on"))
+                                cur = await self._read_bit_bus(rt, bit_offset(pn, pb))
+                                if cur is None or bool(cur) != pw:
+                                    if not await self._p_set(L, rt, pn, pb, pw, BIT_TEXT[pb]):
+                                        failed.append(p)
+                        for bit in ("inv",) + tuple(b for k in DIM_STEPS for b in DIM_STEPS[k]["bits"]
+                                                    if not (n == 4 and b in EVU_STEPS) and b in bit_names(n)
+                                                    and not is_extra(n, b)):
                             want = orig["inv"] if bit == "inv" else False
                             cur = await self._read_bit_bus(rt, bit_offset(n, bit))
                             if cur is None or bool(cur) != want:
@@ -1317,6 +1699,7 @@ class PowerLimit:
                         vals = await self.read()
                         L(f"Eingang {n} nachher: {(vals.get(f'hpin{n}opt') or {}).get('v')} → "
                           f"{opt_text(decode_opt((vals.get(f'hpin{n}opt') or {}).get('v'), n))}")
+                        failed += [x for x in (st.get("restore") or []) if x.get("method") == "silent"]
                         st["restore"] = failed or None
                         if failed:
                             L(f"ACHTUNG: {len(failed)} Einstellung(en) nicht bestätigt – der Manager schreibt sie alle 30 s erneut, bitte am UI 800 prüfen.")
@@ -1341,7 +1724,10 @@ class PowerLimit:
                 L(f"{k}: {txt}")
             good = [k for k, v in res.items() if v.startswith("gedimmt")]
             block = [k for k, v in res.items() if v.startswith("gesperrt")]
-            if good:
+            if good and good[0] == DIM_STEPS["silent"]["label"]:
+                L("Empfehlung: In der Leistungsbegrenzung „Weg C – Software-Drossel“ wählen – die Wärmepumpe läuft "
+                  "mit der eingestellten Stufe gedrosselt weiter, ohne Eingang.")
+            elif good:
                 L(f"Empfehlung: Für die Dimmung „{good[0]}“ verwenden – die Wärmepumpe läuft damit mit reduzierter Leistung weiter.")
             elif block:
                 L(f"„{block[0]}“ schaltet den Kompressor ab (Sperre, keine Dimmung). Für Peak-Shaving geht das als harte Abschaltung.")
@@ -1360,6 +1746,8 @@ class PowerLimit:
     async def _dim_step(self, L, rt, n: int, key: str, c: dict, bus_lines: list[str]) -> str:
         st = self.st
         stp = DIM_STEPS[key]
+        if stp.get("silent"):
+            return await self._silent_step(L, rt, n, c)
         # 1. Kompressor muss laufen
         if c["wait_run_s"]:
             st["prog"]["phase"] = "wartet auf Kompressor"
@@ -1383,10 +1771,23 @@ class PowerLimit:
         # 3. Funktion setzen (Eingang noch inaktiv → noch keine Wirkung)
         st["prog"]["phase"] = "Funktion setzen"
         pend = list(st.get("restore") or [])
+        orig_bits: dict[str, bool] = {}
         for bit in stp["bits"]:
-            pend.append({"method": "bit", "input": n, "bit": bit, "on": False})
+            was = False
+            if is_extra(n, bit):
+                # Zusatzfunktion (EVU Dimmen) kann schon eingestellt sein – danach auf den Ausgangswert zurück
+                cur = await self._read_bit_bus(rt, bit_offset(n, bit))
+                if cur is None:
+                    L(f"  {BIT_TEXT[bit]}: Ausgangswert nicht lesbar – Schritt ausgelassen.")
+                    return "ausgelassen – Ausgangswert nicht lesbar"
+                was = bool(cur)
+                L(f"  {BIT_TEXT[bit]} vorher: {'Ja' if was else 'Nein'} (0x486 Offset {bit_offset(n, bit)})")
+            orig_bits[bit] = was
+            pend.append({"method": "bit", "input": n, "bit": bit, "on": was})
             st["restore"] = pend
             await self.mgr.async_save()
+            if was:
+                continue
             if not await self._p_set(L, rt, n, bit, True, BIT_TEXT[bit]):
                 return "Funktion nicht übernommen"
         if stp.get("mod"):
@@ -1405,6 +1806,7 @@ class PowerLimit:
         if not await self._p_set(L, rt, n, "inv", True, "Eingang invertiert = AKTIV"):
             return "Eingang ließ sich nicht aktivieren"
         during = await self._p_observe(L, c["active_s"], "AKTIV", n)
+        bus1 = len(bus_lines)   # 0x04A2 bis hier = während der aktiven Phase
         # 5. deaktivieren, Funktion zurück
         st["prog"]["phase"] = "zurück"
         st["prog"]["until"] = None
@@ -1412,6 +1814,10 @@ class PowerLimit:
         if not await self._p_set(L, rt, n, "inv", False, "Eingang invertiert = inaktiv"):
             keep.append({"method": "bit", "input": n, "bit": "inv", "on": False})
         for bit in stp["bits"]:
+            was = orig_bits.get(bit, False)
+            if was:
+                L(f"  {BIT_TEXT[bit]} bleibt Ja (Ausgangszustand)")
+                continue
             if not await self._p_set(L, rt, n, bit, False, BIT_TEXT[bit]):
                 keep.append({"method": "bit", "input": n, "bit": bit, "on": False})
         if stp.get("mod"):
@@ -1422,13 +1828,19 @@ class PowerLimit:
                 keep.append(pend[-1])
                 L(f"  Begrenzungswert NICHT zurückgesetzt: {err_text(err)}")
         # zuerst die offenen Bits, danach die ursprünglichen Werte vom Programmstart (die gelten am Ende)
-        st["restore"] = keep + [p for p in pend if p.get("bit") == "inv" or p.get("method") == "value"]
+        st["restore"] = keep + [p for p in pend if p.get("bit") == "inv" or p.get("method") in ("value", "silent")]
         await self.mgr.async_save()
         new = list(dict.fromkeys(bus_lines[bus0:]))
         if new:
             L("  Eingangszustand 0x04A2 während des Schritts:")
             for x in new[:6]:
                 L("    BUS " + x)
+        dimm_state = None
+        if "dimm" in stp["bits"]:
+            dimm_state = hpinput_dimm(bus_lines[bus0:bus1])
+            L("  0x04A2 Byte 3 in der aktiven Phase (Dimmstatus, Vermutung 12.11.): "
+              + {None: "nicht gemeldet", 0: "00 = EVU Dimmen aus", 1: "01 = Dimmung AKTIV",
+                 2: "02 = bereit, nicht aktiv"}.get(dimm_state) or f"{dimm_state:02X} = unbekannt")
         # 6. Erholung
         st["prog"]["phase"] = "Erholung"
         rec = await self._p_observe(L, c["recover_s"], "danach", n,
@@ -1443,6 +1855,8 @@ class PowerLimit:
         first = next((s["t"] for s in during if (s["p"] or 0) < 0.85 * b), None)
         off = all(s["on"] is False or (s["p"] or 0) < 100 for s in late)
         react = f", Reaktion nach ~{int(first)} s" if first is not None else ""
+        if dimm_state == 1:
+            react += ", WP meldet Dimmung aktiv (0x04A2)"
         if off:
             return f"gesperrt – Kompressor aus (Ø {b:.0f} W → {a:.0f} W{react})"
         drop = (b - a) / b
@@ -1451,6 +1865,111 @@ class PowerLimit:
             hint = (f", passt zur Leistungsverringerung {pr} %" if pr and abs(a / b * 100 - pr) <= 15 else "")
             return f"gedimmt – Ø {b:.0f} W → {a:.0f} W (auf {a / b * 100:.0f} %{hint}{react})"
         return f"keine Reaktion – Ø {b:.0f} W → {a:.0f} W ({-drop * 100:+.0f} %)"
+
+    async def _silent_step(self, L, rt, n: int, c: dict) -> str:
+        """v1.24.4: Geräuscharmer Betrieb als Drossel – Stufe 1–4 nacheinander „Dauerhaft an“, Leistung/Limit messen.
+
+        Ohne Eingang: Betriebsart + Stufe stehen in 0x484 (Offset 10 / 64). Grundlast mit Betriebsart „Aus“,
+        danach jede Stufe ``active_s`` lang, zum Schluss Betriebsart und Stufe auf den Ausgangswert.
+        """
+        st = self.st
+        if c["wait_run_s"]:
+            st["prog"]["phase"] = "wartet auf Kompressor"
+            run = await self._p_observe(L, c["wait_run_s"], "warten", n,
+                                        until=lambda s, _a: (s["p"] or 0) >= RUN_W)
+            if self._stopped():
+                return "abgebrochen"
+            if not run or (run[-1]["p"] or 0) < RUN_W:
+                L(f"  Kompressor lief in {c['wait_run_s']} s nicht an – Schritt ausgelassen.")
+                return "ausgelassen – Kompressor lief nicht"
+        cur = await self._read_silent(rt)
+        m0, l0 = cur.get("mode"), cur.get("level")
+        L(f"  Geräuscharmer Betrieb vorher: {silent_label('mode', m0)} · {silent_label('level', l0)} · "
+          f"Von {silent_label('from', cur.get('from'))} bis {silent_label('to', cur.get('to'))} · "
+          f"Limit 0x048D = {cur.get('limit', '–')} · Drehzahl 0x04AA = {cur.get('spd', '–')}")
+        if m0 is None or l0 is None:
+            return "ausgelassen – 0x484 nicht lesbar"
+        if l0 not in SILENT_LEVELS:
+            L(f"  Unbekannte Stufe (Byte {l0 + 2}) – wird nach dem Schritt nicht verändert zurückgeschrieben.")
+            l0 = None
+        entry = {"method": "silent", "mode": m0, "level": l0}
+        st["restore"] = list(st.get("restore") or []) + [entry]
+        await self.mgr.async_save()
+        rows: list[tuple[int, float, Any, Any]] = []
+        b: float | None = None
+        try:
+            if m0 != 0:
+                res, _ = await self._silent_write(rt, "mode", 0)
+                L(f"  Betriebsart → Aus (für die Grundlast): {'bestätigt' if res else 'NICHT bestätigt'}")
+                if res is not True:
+                    return "Betriebsart nicht übernommen"
+                await self._p_wait(20)
+            st["prog"]["phase"] = "Grundlast"
+            base = await self._p_observe(L, c["base_s"], "vorher", n)
+            b = self._avg([s["p"] for s in base])
+            eff = await self._read_effect(rt)
+            if self._stopped():
+                return "abgebrochen"
+            if b is None or b < RUN_W:
+                L(f"  Grundlast zu klein (Ø {b if b is None else round(b)} W) – Schritt ausgelassen.")
+                return "ausgelassen – Kompressor lief nicht"
+            L(f"  Grundlast Ø {b:.0f} W · Limit 0x048D = {eff.get('limit', '–')} · Drehzahl 0x04AA = {eff.get('spd', '–')}")
+            mode_on = False
+            for lv in SILENT_LEVELS:
+                if self._stopped():
+                    break
+                st["prog"]["phase"] = f"Stufe {lv}"
+                st["prog"]["until"] = (dt_util.now() + timedelta(seconds=int(c["active_s"]))).isoformat()
+                res, lines = await self._silent_write(rt, "level", lv)
+                L(f"  Leistungsreduktion → {silent_label('level', lv)}: {'bestätigt' if res else 'NICHT bestätigt'}"
+                  + (f"  [{lines[-1]}]" if lines else ""))
+                if res is not True:
+                    continue
+                if not mode_on:
+                    res, lines = await self._silent_write(rt, "mode", 2)
+                    L(f"  Betriebsart → Dauerhaft an: {'bestätigt' if res else 'NICHT bestätigt'}"
+                      + (f"  [{lines[-1]}]" if lines else ""))
+                    if res is not True:
+                        return "Betriebsart nicht übernommen"
+                    mode_on = True
+                during = await self._p_observe(L, c["active_s"], f"STUFE {lv}", n)
+                eff = await self._read_effect(rt)
+                late = during[len(during) // 3:] or during
+                a = self._avg([s["p"] for s in late])
+                if a is None:
+                    L(f"  Stufe {lv}: keine Messwerte")
+                    continue
+                rows.append((lv, a, eff.get("limit"), eff.get("spd")))
+                L(f"  Stufe {lv}: Ø {b:.0f} W → {a:.0f} W ({a / b * 100:.0f} %) · Limit 0x048D = {eff.get('limit', '–')}"
+                  f" · Drehzahl 0x04AA = {eff.get('spd', '–')}")
+        finally:
+            st["prog"]["phase"] = "zurück"
+            st["prog"]["until"] = None
+            ok = await self._silent_restore(rt, m0, l0)
+            L(f"  Geräuscharmer Betrieb zurück auf {silent_label('mode', m0)} / {silent_label('level', l0)}: "
+              + ("bestätigt" if ok else "NICHT bestätigt – wird alle 30 s wiederholt"))
+            if ok:
+                st["restore"] = [x for x in (st.get("restore") or []) if x is not entry] or None
+            await self.mgr.async_save()
+        if b and not self._stopped():
+            st["prog"]["phase"] = "Erholung"
+            rec = await self._p_observe(L, c["recover_s"], "danach", n,
+                                        until=lambda s, a: len(a) >= 3 and (s["p"] or 0) >= 0.7 * b)
+            back = rec and (rec[-1]["p"] or 0) >= 0.7 * b
+            L(f"  Erholung: {'nach ' + str(int(rec[-1]['t'])) + ' s wieder ≥ 70 % der Grundlast' if back else 'Grundlast in ' + str(c['recover_s']) + ' s nicht wieder erreicht'}")
+        if not rows:
+            return "keine Messwerte während der Stufen"
+        txt = " · ".join(f"Stufe {lv} {a:.0f} W ({a / b * 100:.0f} %, Limit {lim if lim is not None else '–'})"
+                         for lv, a, lim, _spd in rows)
+        if all(a < 100 for _lv, a, _l, _s in rows):
+            return f"gesperrt – Kompressor aus (Ø {b:.0f} W; {txt})"
+        best = min(a for _lv, a, _l, _s in rows)
+        if (b - best) / b >= 0.15:
+            return f"gedimmt – Ø {b:.0f} W → {txt}"
+        lims = [lim for _lv, _a, lim, _s in rows if lim is not None]
+        hint = (" – das Limit sinkt, die WP lief aber schon unterhalb (Teillast); bei höherer Last wiederholen"
+                if lims and min(lims) < 90 else "")
+        return f"keine Reaktion – Ø {b:.0f} W → {txt}{hint}"
 
     # ------------------------------------------------------------- Anlern-Modus
     @property
@@ -1674,6 +2193,20 @@ class PowerLimit:
                 await self.mgr.async_save()
             except Exception:  # noqa: BLE001
                 _LOGGER.debug("saving learn log failed", exc_info=True)
+
+
+def hpinput_dimm(lines: list[str]) -> int | None:
+    """Letzter von der WP gemeldeter Wert von 0x04A2 Byte 3 (Vermutung 12.11.2026: 00 aus, 01 aktiv, 02 bereit)."""
+    from .input_learn import parse_line
+
+    val = None
+    for line in lines:
+        tel = parse_line(line)
+        if tel is None or tel.type != 0x4A2 or tel.src != 0x08 or not tel.data:
+            continue
+        if tel.offset <= 3 < tel.offset + len(tel.data):
+            val = tel.data[3 - tel.offset]
+    return val
 
 
 def _hm_now() -> str:

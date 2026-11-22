@@ -825,13 +825,29 @@ class EhsAppView(HomeAssistantView):
         logo = await hass.async_add_executor_job(_logo_data_uri)
         html = (wpa_inject(EHS_APP_PAGE).replace("__LOGO__", logo).replace("__PANEL_PATH__", "/" + SAMSUNG_SIDEBAR_URL)
                 .replace("__PANEL_PATHS__", _PANEL_PATHS_JS).replace("__VENDOR_NAMES__", _VENDOR_NAMES_JS)
-                .replace("__MODE__", "samsung"))
+                .replace("__MODE__", "samsung")
+                # v1.25.1: auch hier – der Reiter „Brötje EHS“ läuft auf derselben Seite wie Samsung
+                .replace("__BSB_HB__", await hass.async_add_executor_job(_handbuch_json)))
         return web.Response(
             text=html,
             content_type="text/html",
             charset="utf-8",
             headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
         )
+
+
+_HB_CACHE: str | None = None
+
+
+def _handbuch_json() -> str:
+    """v1.25.0: Einstelltafel ISR-Plus (Menüs, Prog.-Nr., Ebenen, Standardwerte, Fehlercodes) für „Werte → Handbuch“."""
+    global _HB_CACHE  # noqa: PLW0603
+    if _HB_CACHE is None:
+        try:
+            _HB_CACHE = (Path(__file__).parent / "bsb_handbuch_isr.json").read_text(encoding="utf-8").replace("<", "\\u003c")
+        except OSError:
+            _HB_CACHE = "null"
+    return _HB_CACHE
 
 
 class BsbAppView(HomeAssistantView):
@@ -847,7 +863,8 @@ class BsbAppView(HomeAssistantView):
         hass: HomeAssistant = request.app["hass"]
         logo = await hass.async_add_executor_job(_logo_data_uri)
         html = (wpa_inject(EHS_APP_PAGE).replace("__LOGO__", logo).replace("__PANEL_PATH__", "/esp-bus-adapter").replace("__PANEL_PATHS__", _PANEL_PATHS_JS).replace("__VENDOR_NAMES__", _VENDOR_NAMES_JS)
-                .replace("__MODE__", "bsb").replace("<title>EMS-EHS</title>", "<title>EMS-BSB</title>"))
+                .replace("__MODE__", "bsb").replace("<title>EMS-EHS</title>", "<title>EMS-BSB</title>")
+                .replace("__BSB_HB__", await hass.async_add_executor_job(_handbuch_json)))
         return web.Response(
             text=html, content_type="text/html", charset="utf-8",
             headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
@@ -973,7 +990,7 @@ button,select,input{font:inherit;color:inherit}
 .cap+.row,.cap+div>.row:first-child{border-top:0}
 .row .k{color:var(--k);font-size:16px;min-width:0}
 .row .k small{display:block;color:var(--lbl);font-size:11px;margin-top:1px;word-break:break-all}
-.row .v{font-weight:700;font-size:16px;text-align:right;white-space:nowrap}
+.row .v{font-weight:700;font-size:16px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
 .row .v small{font-weight:400;color:var(--dim);font-size:13px;margin-left:6px}
 .row .v.d{color:var(--dim);font-weight:400}
 .pill{display:inline-block;font-size:13px;font-weight:600;padding:3px 10px;border-radius:12px;background:#183b23;color:#7fd99a}
@@ -1052,6 +1069,7 @@ select{height:36px;border:1px solid var(--line);border-radius:8px;background:var
   .grid,.grid.g3{gap:12px}.col{gap:12px}.mas{columns:1}.mas .card{margin-bottom:12px}
   .row{flex-wrap:wrap;row-gap:8px;min-height:52px}
   .row .k{flex:1 1 120px;min-width:0;font-size:15px}.num button{width:38px}
+  .row .v{max-width:100%}
   .row>.ctl,.row>.tog,.row>.v{margin-left:auto}
   .row>select{flex:1 1 100%;max-width:none;width:100%;height:44px}
   .row .q{width:100%!important;flex:1 1 auto;height:44px!important}
@@ -1149,7 +1167,33 @@ body{overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}
 .tile.lnk:hover{border-color:var(--sam)}
 .wab{padding-top:4px}.wab .card{background:transparent;border:0;border-top:1px solid var(--sep);border-radius:0;padding:12px 0 4px;margin:0}.wab>.card:first-child,.wab .col>.card:first-child{border-top:0}
 /*__WPA_CSS__*/
+/* v1.25.0 Handbuch */
+.hbc{padding-bottom:4px}.hbh{all:unset;box-sizing:border-box;display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;padding:10px 0;border-top:1px solid var(--sep);min-height:52px}.cap+.hbh{border-top:0}
+.hbh:hover b{color:#fff}.hbw{color:var(--ok)}.hbps{border-left:2px solid var(--sam);padding-left:12px;margin:0 0 8px 2px}
+.hbh b{display:block;font-size:16px;color:var(--k);font-weight:500}.hbh.on b{color:var(--txt);font-weight:600}.hbh small{display:block;color:var(--lbl);font-size:12px;margin-top:2px}
+.hbch{font-size:22px;color:var(--dim);transition:transform .15s;line-height:1}.hbch.on{transform:rotate(90deg)}
+button.row.hbr{all:unset;box-sizing:border-box;display:flex;width:100%;justify-content:space-between;align-items:center;gap:14px;padding:11px 0;border-top:1px solid var(--sep);min-height:48px;cursor:pointer}
+button.row.hbr:hover .kt{color:var(--txt)}button.row.hbr.sel{border-bottom:0}
+.hbr .v{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.hbnr{display:inline-block;min-width:40px;margin-right:8px;font-variant-numeric:tabular-nums;color:var(--sam);font-weight:600}
+.hbdet{background:var(--in);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:0 0 10px}
+.hbl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--lbl);margin:2px 0 6px}
+.hbo{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}.hbt{font-size:13px;padding:4px 10px;border-radius:14px;border:1px solid var(--line);color:var(--k)}
+.hbt.std{border-color:var(--dim)}.hbt.on{background:var(--sam);border-color:var(--sam);color:#fff}
+.hbg{display:grid;grid-template-columns:max-content 1fr;gap:5px 16px;font-size:14px}.hbg span{color:var(--lbl)}.hbg b{font-weight:600;color:var(--k)}.hbg small{color:var(--dim);font-weight:400}
+.hbn{color:var(--dim);font-size:13px;margin-top:8px}
+.hbb{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:9px;margin-left:2px;vertical-align:1px}
+.hbb.rw{background:#123a24;color:#7fd99a}.hbb.r{background:#14304d;color:#8cc4ff}.hbb.no{background:#26292e;color:var(--dim)}
+.hbset{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.hbsel{height:34px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--txt);padding:0 8px}
+.hbnum{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden;height:34px}.hbnum button{width:34px;height:34px;border:0;background:var(--card);color:var(--txt);font-size:18px;cursor:pointer}
+.hbnum input{width:70px;height:34px;border:0;border-left:1px solid var(--line);border-right:1px solid var(--line);background:var(--in);color:var(--txt);text-align:center;font-weight:700}
+.hbu{color:var(--dim);font-size:13px}.hbck{display:inline-flex;gap:6px;align-items:center;color:var(--k);font-size:13px}
+.hbgl{display:flex;justify-content:flex-end;padding:4px 0 6px}.hbsum{color:var(--dim);font-size:13px}.hbsum b{color:var(--txt)}
+
+.hbb.tset{background:#3a3000;color:#ffd866}.hblive{border-color:var(--sam)}.hbtr.live .kt{font-size:17px}
+.hbtn{height:34px!important;min-width:0!important;width:110px}.hbtr .hbset{flex:none}
 </style></head><body>
+<script type="application/json" id="hbdata">__BSB_HB__</script>
 <div class="top">
   <nav class="tabs" id="tabs"></nav>
 </div>
@@ -1957,12 +2001,34 @@ function bsCardScan(){
     <div class="note">${c.kind==='bsblan'?'Liest die Kategorien aus BSB-LAN.':'Fragt alle Werte der eigenen Tabelle ab (ca. 90, mit Ausweich-IDs je Gerätefamilie) – nur lesen, ca. 1 Minute.'}</div></div>`;
 }
 function bsCardProbe(){
-  const b=BS, c=bc(), ps=b.probe_presets||[], run=bsJob();
+  const b=BS, c=bc(), ps=b.probe_presets||[], run=bsJob(), pd=b.probe_done||{}, au=b.probe_auto||{};
   if(c.kind!=='esphome') return '';
+  const pr=run&&run.type==='probe'?run:null, pct=pr&&pr.total?Math.round(100*pr.done/pr.total):0;
+  const gel=ps.filter(x=>(pd[x[1]+x[2]+x[3]]||{}).complete).length;
+  const tag=t=>{ const d=new Date(t*1000); return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); };
+  const rows=ps.map(x=>{ const k=x[1]+x[2]+x[3], d=pd[k], n=parseInt(x[3],16)-parseInt(x[2],16)+1, rng=x[1]+x[2]+' … '+x[1]+x[3]+' · '+n+' IDs';
+    const lauf=pr&&pr.key===k;
+    let sub, ctl;
+    if(lauf){ sub=rng+(pr.all?' · gerade dran':''); ctl=`<span class="pill dm">läuft${pr.all?'':' – '+pct+' %'}</span>`; }
+    else if(d&&d.complete){ sub=rng+' · gelesen '+tag(d.t)+' · '+(d.new||0)+' neu'; ctl=`<span style="display:flex;gap:6px;align-items:center"><span class="pill">✓ Gelesen</span><button class="btn sm" data-bprobe="${esc(x.join('|'))}" ${run?'disabled':''}>Erneut</button></span>`; }
+    else { sub=rng+(d&&d.total?' · nur teilweise gelesen ('+Math.round(100*d.done/d.total)+' %)':' · ca. '+Math.round(n*0.36/60)+' min'); ctl=`<button class="btn sm" data-bprobe="${esc(x.join('|'))}" ${run?'disabled':''}>Starten</button>`; }
+    return hRow(x[0],ctl,sub); }).join('');
+  const rest=ps.filter(x=>!(pd[x[1]+x[2]+x[3]]||{}).complete).reduce((a,x)=>a+parseInt(x[3],16)-parseInt(x[2],16)+1,0);
+  const allCtl=pr&&pr.all?`<span style="display:flex;gap:6px;align-items:center"><span class="pill dm">${pct} %</span><button class="btn sm" data-act="bcancel">Abbrechen</button></span>`
+    :pr?`<button class="btn sm" data-act="bcancel">Abbrechen</button>`
+    :`<button class="btn sm ${gel<ps.length?'pri':''}" data-bprobeall="${gel<ps.length?0:1}" ${run?'disabled':''}>${gel<ps.length?'Alle lesen':'Alle neu lesen'}</button>`;
+  const allSub=pr&&pr.all?(pr.part?pr.part+' · ':'')+(pr.done||0)+' / '+(pr.total||0)+' IDs'+(pr.auto?' · automatisch im Hintergrund':'')
+    :gel+' von '+ps.length+' Bereichen gelesen'+(gel<ps.length?' · Rest ca. '+Math.round(rest*0.36/60)+' min':'');
+  const autoSub=!au.enabled?'aus – Bereiche nur von Hand'
+    :au.finished?'erledigt am '+tag(au.finished)+' – alle Bereiche einmal gelesen'
+    :pr&&pr.auto?'läuft gerade im Hintergrund'
+    :'liest alle Bereiche einmal im Hintergrund, sobald Adapter und Regler bereit sind';
   return `<div class="card"><div class="cap">ID-Suchlauf</div>
-    ${ps.map(x=>{ const n=parseInt(x[3],16)-parseInt(x[2],16)+1; return hRow(x[0],`<button class="btn sm" data-bprobe="${esc(x.join('|'))}" ${run?'disabled':''}>Starten</button>`,x[1]+x[2]+' … '+x[1]+x[3]+' · '+n+' IDs · ca. '+Math.round(n*0.9/60)+' min'); }).join('')}
+    ${hRow('Alle Bereiche',allCtl,allSub)}
+    ${hRow('Automatisch beim ersten Start',hTog('data-bct','auto_probe',au.enabled!==false),autoSub)}
+    ${rows}
     ${hRow('Eigener Bereich (hex)',`<span style="display:flex;gap:6px">${hIn('bpp',BS_PR.p,70,'placeholder="2D3D" maxlength="4"')}${hIn('bps',BS_PR.s,70,'placeholder="0500" maxlength="4"')}${hIn('bpe',BS_PR.e,70,'placeholder="06FF" maxlength="4"')}<button class="btn sm" data-act="bprobec" ${run?'disabled':''}>Starten</button></span>`,'oberer Teil · von · bis')}
-    <div class="note">Fragt jede Befehls-ID im Bereich einmal ab. Was der Regler beantwortet und noch nicht in der Tabelle steht, landet unten bei „Unbekannte Werte“. Nur lesen.</div></div>`;
+    <div class="note">Fragt jede Befehls-ID im Bereich einmal ab. Was der Regler beantwortet und noch nicht in der Tabelle steht, landet unten bei „Unbekannte Werte“. Nur lesen. Während „Alle Bereiche“ läuft, fragt die Bus-Abfrage die Favoriten weiter ab.</div></div>`;
 }
 function bsCardUnknown(){
   const us=BS.unknown||[], cods=(BS.codecs||[]).map(x=>x[0]);
@@ -2202,6 +2268,9 @@ function bAccFix(k,icon,title,sub,body){ if(!body) return '';
     <div class="ab">${body}</div></div>`; }
 /* --- Werte des Adapters (ESPHome-Entitäten) --- */
 const AE=()=>(BS&&BS.entities)||[];
+// Zeitprogramme / Regler-Uhr stehen unter „Zeitprogramme“ – in „Werte · Adapter“ nicht als Rohtext zeigen
+const B_ZEIT=/^(Zeitprogramm|Regler-Uhr|Regler Datum|Regler-Uhrzeit)/;
+const AEW=()=>AE().filter(e=>e.domain!=='button'&&!B_ZEIT.test(aLbl(e)));
 function aId(key){ const re=new RegExp('(^|_)'+key+'$'); const e=AE().find(x=>re.test(x.entity_id.split('.')[1]||'')); return e?e.entity_id:null; }
 function aS(key){ const id=aId(key); return id?S(id):null; }
 function aNum(key){ const s=aS(key); if(!s) return null; const v=parseFloat(s.state); return isNaN(v)?null:v; }
@@ -2287,8 +2356,217 @@ function bStart(){
   const hk=[bHk(1),bHk(2)].filter(Boolean).join('');
   const left=hk||bTww()+bWez(), right=hk?bTww()+bWez()+bFavCompact():bFavCompact();
   return bTilesStart()+`<div class="grid" style="margin-top:14px"><div class="col">${left}</div><div class="col">${right}</div></div>`; }
+/* ---------- v1.25.0: Handbuch (Einstelltafel ISR-Plus) – Aufgliederung, Lesen, Schreiben, Zuordnen ---------- */
+const HB=(()=>{ try{ return JSON.parse(document.getElementById('hbdata').textContent); }catch(e){ return null; } })();
+let HB_Q='', HB_LV='', HB_OPEN={}, HB_SEL='', HB_WERT=false, HB_SUB='menu', HB_ED={}, HB_MAP={};
+try{ HB_OPEN=JSON.parse(localStorage.getItem('emsehs_hbopen')||'{}'); }catch(e){}
+const HB_LVN={E:'Endbenutzer',I:'Inbetriebsetzung',F:'Fachmann',O:'OEM'};
+const HB_RO=/^(Status|Diagnose|Ein-\/Ausgangstest)/;          // Anzeige-Menüs: nur lesen
+const HB_PFX=[[/^(Zeitprogramm Heizkreis 1|Ferien Heizkreis 1|Heizkreis 1)$/,['2D3D','213D']],[/^(Zeitprogramm Heizkreis 2|Ferien Heizkreis 2|Heizkreis 2)$/,['2E3D','223D']],
+  [/(Heizkreis P|3 \/ HKP)/,['2F3D','233D']],[/^(Trinkwasser|Zeitprogramm 4)/,['313D','253D']],[/^Solar/,['493D']],[/^(Kaskade|Diagnose Kaskade)/,['0D3D','113D']],
+  [/^(Diagnose Erzeuger|Wartung|Fehler|Status|Konfiguration|Uhrzeit|LPB)/,['053D','0D3D','113D']],[/^Diagnose Verbraucher/,['053D','2D3D','2E3D','313D']]];
+const hbVals=()=>{ const m={}; ((BS&&BS.params)||[]).forEach(p=>{ m[String(parseFloat(p.line))]=p; }); return m; };
+const hbCatMap=()=>{ const m={}; ((BS&&BS.catalog)||[]).forEach(c=>{ m[String(parseFloat(c.line))]=c; }); return m; };
+const hbLan=()=>!!(BS&&bc().kind==='bsblan');
+// Zugriff: rw | r | none (+ Katalogeintrag)
+function hbAcc(p,g,cm){ const c=cm[String(p.nr)];
+  if(c) return {a:(c.ro||HB_RO.test(g.name))?'r':'rw',c};
+  if(hbLan()) return {a:HB_RO.test(g.name)?'r':'rw',c:null};
+  return {a:'none',c:null}; }
+const hbLvOk=p=>!HB_LV||(HB_LV==='E'?p.lvl==='E':HB_LV==='I'?/[EI]/.test(p.lvl):HB_LV==='rw');
+function hbMatch(p,g,q){ if(!q) return true; return (p.nr+' '+p.name+' '+g.name+' '+(p.std||'')+' '+(p.opts||[]).join(' ')).toLowerCase().includes(q); }
+// Datentyp aus dem Handbuch schätzen (Standardwert / Auswahl)
+function hbCodec(p){ const s=String(p.std||'');
+  if(p.opts&&p.opts.length) return 'enum';
+  if(/°C|K\b/.test(s)) return 'temp'; if(/%/.test(s)) return 'pct';
+  if(/^\d+[.,]\d\d$/.test(s.trim())) return 'steil'; if(/\b(min|h|s|Tage?)\b/.test(s)) return 'u16'; return 'u8'; }
+const HB_DIV={temp:64,steil:50,pct:1,u8:1,u16:1,enum:1,onoff:1};
+function hbDecode(raw,codec){ const b=String(raw||'').split(' ').filter(Boolean).map(x=>parseInt(x,16)); if(!b.length) return null;
+  if(b[0]===1||b[0]===5) return {t:'—',v:null};
+  const d=b.slice(1), n={temp:2,steil:2,pct:1,u8:1,u16:2,enum:1,onoff:1}[codec]||d.length; if(d.length!==n) return null;
+  let v=d.reduce((a,x)=>a*256+x,0); if(codec==='temp'&&v>=32768) v-=65536; v=v/(HB_DIV[codec]||1); return {v,t:String(Math.round(v*100)/100).replace('.',',')}; }
+const hbStdNum=s=>{ const m=String(s||'').replace(',','.').match(/-?\d+(\.\d+)?/); return m?parseFloat(m[0]):null; };
+// Vorschläge aus „Unbekannte Werte“ (ID-Suchlauf/Mitschnitt): passender Bereich, passende Länge, Wert = Standardwert
+function hbSuggest(p,g){ const codec=hbCodec(p), pf=(HB_PFX.find(([re])=>re.test(g.name))||[0,[]])[1], std=hbStdNum(p.std);
+  const optIdx=p.opts&&p.opts.length?p.opts.indexOf(p.std):-1;
+  return ((BS&&BS.unknown)||[]).map(u=>{ const d=hbDecode(u.raw,codec); let s=0, why=[];
+      if(pf.includes(String(u.cmd).slice(0,4))){ s+=2; why.push('passender Bereich'); }
+      if(d){ s+=1; if(d.v!=null&&((std!=null&&Math.abs(d.v-std)<0.01)||(optIdx>=0&&d.v===optIdx))){ s+=3; why.push('Wert = Standardwert'); } }
+      return {u,d,s,why}; }).filter(x=>x.s>=2).sort((a,b)=>b.s-a.s).slice(0,25); }
+function hbCtl(p,acc,v){ const c=acc.c, id='hbin-'+p.nr, ed=HB_ED[p.nr];
+  const opts=c&&c.enum?c.enum:(p.opts||[]).map((o,i)=>[i,o]);
+  if(opts.length&&(!c||c.kind==='enum')){ const cur=ed!=null?ed:(v&&v.value!=null?String(v.value):'');
+    return `<select id="${id}" class="hbsel">${cur===''?'<option value="">– wählen –</option>':''}${opts.map(([k,t])=>`<option value="${esc(t)}" ${String(k)===String(cur)||t===cur?'selected':''}>${esc(t)}</option>`).join('')}</select>`; }
+  if(c&&c.kind==='time'){ const cur=ed!=null?ed:(v&&v.value!=null?v.value:''); return `<input id="${id}" class="q hbtn" placeholder="hh:mm" value="${esc(cur)}">`; }
+  const step=c?(c.step||1):(hbCodec(p)==='temp'?0.5:hbCodec(p)==='steil'?0.02:1), unit=c?c.unit:'';
+  const cur=ed!=null?ed:(v&&v.value!=null?v.value:'');
+  return `<span class="num hbnum"><button data-hbstep="${p.nr}:-${step}">−</button><input id="${id}" inputmode="decimal" value="${esc(String(cur).replace('.',','))}"><button data-hbstep="${p.nr}:${step}">+</button></span>${unit?`<span class="hbu">${esc(unit)}</span>`:''}`; }
+function hbRow(p,g,vals,cm){
+  const v=vals[String(p.nr)], sel=HB_SEL===String(p.nr), acc=hbAcc(p,g,cm);
+  const badge=acc.a==='rw'?'<span class="hbb rw">lesen &amp; schreiben</span>':acc.a==='r'?'<span class="hbb r">lesen</span>':'<span class="hbb no">nicht zugeordnet</span>';
+  const sub=[p.lvl?'Ebene '+p.lvl:'', p.std&&p.std!=='-'?'Standard '+p.std:''].filter(Boolean).join(' · ');
+  const val=v?`<span class="v${v.valid===false?' d':''}">${esc(v.text??'–')}</span>`:'<span class="v d">–</span>';
+  let det='';
+  if(sel){
+    const typ=(p.typ||[]).map(t=>'ISR '+t).join(', '), cw=!!(BS&&BS.can_write);
+    let ctl='';
+    if(acc.a==='rw'){
+      ctl=`<div class="hbl">Einstellen</div><div class="hbset">${hbCtl(p,acc,v)}<button class="btn sm pri" data-hbset="${p.nr}" ${cw?'':'disabled'}>Übernehmen</button><button class="btn sm" data-hbread="${p.nr}">${I.re} Lesen</button></div>
+        ${cw?'':'<div class="hbn">Schreiben braucht die ESP-Bus-Adapter-Firmware 2.10.0 (Aktion bsb_set).</div>'}`;
+    } else if(acc.a==='r'){
+      ctl=`<div class="hbset"><button class="btn sm" data-hbread="${p.nr}">${I.re} Lesen</button></div>`;
+    } else {
+      const sg=hbSuggest(p,g), codec=hbCodec(p), all=((BS&&BS.unknown)||[]);
+      const opt=x=>`<option value="${esc(x.u.cmd)}">${esc(x.u.cmd)} · ${esc(x.d?x.d.t:x.u.raw)}${x.why.length?' · '+esc(x.why.join(', ')):''}</option>`;
+      const rest=all.filter(u=>!sg.some(x=>x.u.cmd===u.cmd)).slice(0,150);
+      const m=HB_MAP[p.nr]||{};
+      ctl=`<div class="hbl">Zuordnen</div>
+        <div class="hbn" style="margin:0 0 8px">Diese Prog.-Nr. hat noch keine Befehls-ID. Wähle den passenden Wert aus „Unbekannte Werte“ (ID-Suchlauf) – Vorschläge stehen oben.</div>
+        <div class="hbset"><select id="hbcmd-${p.nr}" class="hbsel" style="min-width:260px">${sg.length?`<optgroup label="Vorschläge">${sg.map(opt).join('')}</optgroup>`:''}
+          ${rest.length?`<optgroup label="Alle unbekannten Werte">${rest.map(u=>`<option value="${esc(u.cmd)}">${esc(u.cmd)} · ${esc(u.raw||'')}</option>`).join('')}</optgroup>`:''}
+          ${!all.length?'<option value="">– noch keine unbekannten Werte –</option>':''}</select>
+          <select id="hbcod-${p.nr}" class="hbsel">${['temp','steil','pct','u8','u16','u32','enum','onoff','hours'].map(k=>`<option ${k===(m.codec||codec)?'selected':''}>${k}</option>`).join('')}</select>
+          <label class="hbck"><input type="checkbox" id="hbro-${p.nr}" ${HB_RO.test(g.name)?'checked':''}> nur lesen</label>
+          <button class="btn sm pri" data-hbmap="${p.nr}" ${all.length?'':'disabled'}>Zuordnen</button></div>
+        <div class="hbn">Sicher zuordnen: Wert am Bedienteil ändern, Bereich neu lesen (ID-Suchlauf → Erneut) – die ID, deren Wert sich mitändert, ist es.</div>`;
+    }
+    det=`<div class="hbdet">
+      ${ctl}
+      ${p.opts&&p.opts.length?`<div class="hbl" style="margin-top:12px">Auswahl laut Handbuch</div><div class="hbo">${p.opts.map(o=>`<span class="hbt${v&&String(v.text)===o?' on':(o===p.std?' std':'')}">${esc(o)}</span>`).join('')}</div>`:''}
+      <div class="hbg" style="margin-top:10px"><span>Prog.-Nr.</span><b>${p.nr}</b><span>Menü</span><b>${esc(g.name)}</b><span>Einstellebene</span><b>${esc(HB_LVN[p.lvl]||'–')}</b>
+        <span>Standardwert</span><b>${esc(p.std||'–')}</b>${v?`<span>Aktuell</span><b>${esc(v.text??'–')}${v.ts?` <small>vor ${bsAge(v.ts)}</small>`:''}</b>`:''}
+        ${acc.c?`<span>Befehls-ID</span><b>${esc(acc.c.cmd)}${acc.c.user?' <small>zugeordnet</small>':''}</b>`:''}
+        ${typ?`<span>Reglertyp</span><b>${esc(typ)}</b>`:''}${p.erkl?`<span>Erklärung</span><b>Handbuch Seite ${p.erkl}</b>`:''}</div>
+      ${p.note?`<div class="hbn">${esc(p.note)}</div>`:''}${g.note?`<div class="hbn">${esc(g.note)}</div>`:''}
+      ${acc.c||v?`<div class="btns" style="margin:10px 0 4px">${v?`<button class="btn sm" data-bfav="${esc(v.line)}" data-on="${bsFav(v.line)?0:1}">${bsFav(v.line)?'★ Favorit':'☆ Favorit'}</button>`:''}${acc.c&&acc.c.user?`<button class="btn sm" data-hbforget="${p.nr}">Zuordnung lösen</button>`:''}</div>`:''}</div>`;
+  }
+  return `<button class="row hbr${sel?' sel':''}" data-hb="p:${p.nr}"><span class="k"><span class="kt"><span class="hbnr">${p.nr}</span>${esc(p.name)}</span><small>${sub?esc(sub)+' · ':''}${badge}</small></span>${val}</button>${det}`;
+}
+const HB_SECT=[['Zeit & Bedienung',/^(Uhrzeit|Bedieneinheit|Funk)/],['Zeitprogramme & Ferien',/^(Zeitprogramm|Ferien)/],
+  ['Heiz- und Kühlkreise',/^(Heizkreis|Kühlkreis)/],['Trinkwasser',/^Trinkwasser($| )/],
+  ['Erzeuger, Speicher & Solar',/^(Hx|Schwimmbad|Vorregler|Kaskade|Solar|Feststoff|Puffer|Trinkwasser-Speicher|Trinkwasser Durch)/],
+  ['Anlage & Service',/^(Konfiguration|LPB|Fehler|Wartung|Ein-)/],['Status & Diagnose',/^(Status|Diagnose)/]];
+function hbMenu(){
+  const q=HB_Q.trim().toLowerCase(), vals=hbVals(), cm=hbCatMap();
+  const gs=HB.gruppen.map((g,i)=>({g,i,ps:g.params.filter(p=>hbLvOk(p)&&hbMatch(p,g,q)&&(!HB_WERT||vals[String(p.nr)])&&(HB_LV!=='rw'||hbAcc(p,g,cm).a!=='none'))})).filter(x=>x.ps.length);
+  if(!gs.length) return '<div class="card"><div class="empty">Keine Treffer.</div></div>';
+  const used=new Set();
+  const sect=HB_SECT.map(([t,re])=>{ const l=gs.filter(x=>!used.has(x.i)&&re.test(x.g.name)); l.forEach(x=>used.add(x.i)); return [t,l]; });
+  const rest=gs.filter(x=>!used.has(x.i)); if(rest.length) sect.push(['Weitere',rest]);
+  const cards=sect.filter(([t,l])=>l.length).map(([t,l])=>`<div class="card hbc"><div class="cap">${esc(t)} <span class="n">· ${l.length} ${l.length===1?'Menü':'Menüs'}</span></div>${l.map(({g,i,ps})=>{
+    const open=q||HB_OPEN[i], nv=ps.filter(p=>vals[String(p.nr)]).length, na=ps.filter(p=>hbAcc(p,g,cm).a!=='none').length, r=ps[0].nr, r2=ps[ps.length-1].nr;
+    return `<button class="hbh${open?' on':''}" data-hb="g:${i}"><span><b>${esc(g.name)}</b><small>${r}${r2!==r?' – '+r2:''} · ${ps.length} Parameter${na?` · <span class="hbw">${na} bedienbar</span>`:''}${nv?` · ${nv} gelesen`:''}</small></span><span class="hbch${open?' on':''}">›</span></button>
+      ${open?`<div class="hbps">${na?`<div class="hbgl"><button class="btn sm" data-hbrg="${i}">${I.re} Menü lesen (${na})</button></div>`:''}${ps.map(p=>hbRow(p,g,vals,cm)).join('')}</div>`:''}`; }).join('')}</div>`);
+  const h=Math.ceil(cards.length/2);
+  return `<div class="grid"><div class="col">${cards.slice(0,h).join('')}</div><div class="col">${cards.slice(h).join('')}</div></div>`;
+}
+function hbFehler(){
+  const q=HB_Q.trim().toLowerCase(); const l=HB.fehler.filter(([c,t])=>!q||(c+' '+t).toLowerCase().includes(q));
+  return `<div class="card"><div class="cap">Fehlercodes · ${l.length}</div>${l.length?l.map(([c,t])=>`<div class="row"><span class="k"><span class="kt"><span class="hbnr">${c}</span>${esc(t)}</span></span></div>`).join(''):'<div class="empty">Keine Treffer.</div>'}
+    <div class="note">Wird am Regler ein Fehler gemeldet (Status/Fehler), steht hier, was der Code bedeutet.</div></div>`;
+}
+function hbInfo(){
+  return `<div class="card"><div class="cap">Info-Taste · ${HB.info.length} Anzeigen</div>${HB.info.map(x=>`<div class="row"><span class="k">${esc(x.name)}</span><span class="v d">Ebene E</span></div>`).join('')}
+    <div class="note">Die Info-Taste am Bedienteil blättert durch diese Anzeigen – welche erscheinen, hängt vom Betriebszustand ab.</div></div>`;
+}
+function bHandbuch(){
+  if(!HB) return '<div class="card pad"><div class="empty">Handbuch-Daten fehlen.</div></div>';
+  const vals=hbVals(), cm=hbCatMap(); let n=0,na=0,nw=0,nv=0;
+  HB.gruppen.forEach(g=>g.params.forEach(p=>{ n++; const a=hbAcc(p,g,cm).a; if(a!=='none') na++; if(a==='rw') nw++; if(vals[String(p.nr)]) nv++; }));
+  const sub=(k,l)=>`<button class="chip ${HB_SUB===k?'on':''}" data-hb="s:${k}">${l}</button>`;
+  const lv=(k,l)=>`<button class="chip ${HB_LV===k?'on':''}" data-hb="l:${k}">${l}</button>`;
+  const allOpen=HB.gruppen.every((g,i)=>HB_OPEN[i]);
+  const cw=!!(BS&&BS.can_write);
+  return `<div class="tools" style="margin-bottom:10px">${sub('menu','Menüs · '+HB.gruppen.length)}${sub('fehler','Fehlercodes · '+HB.fehler.length)}${sub('info','Info-Taste')}${!hbLan()?sub('teach',(BS&&BS.teach&&BS.teach.running?'● ':'')+'Anlernen'):''}
+      <span class="sp"></span><span class="hbsum"><b>${na}</b> von ${n} bedienbar · <b>${nw}</b> schreibbar${cw?'':' (Firmware 2.10.0 nötig)'}</span></div>
+    ${HB_SUB==='teach'?'':`<div class="tools"><input class="q" id="hbq" placeholder="${HB_SUB==='fehler'?'Code oder Text …':'Prog.-Nr. oder Name …'}" value="${esc(HB_Q)}">
+    ${HB_SUB==='menu'?`${lv('','Alle')}${lv('E','Endbenutzer')}${lv('I','Inbetriebsetzung')}${lv('rw','Nur bedienbar · '+na)}
+      <button class="chip ${HB_WERT?'on':''}" data-hb="w">Nur gelesene · ${nv}</button><span class="sp"></span>
+      <button class="btn sm" data-hb="a">${allOpen?'Alle zuklappen':'Alle aufklappen'}</button>`:''}</div>`}
+    ${HB_SUB==='fehler'?hbFehler():HB_SUB==='info'?hbInfo():HB_SUB==='teach'?hbTeach():hbMenu()}
+    <div class="note top0" style="padding-top:12px">${n} Parameter in ${HB.gruppen.length} Menüs nach der Einstelltafel des Programmier- und Hydraulikhandbuchs (Brötje ISR-Plus, 59-274 079.4, 06/2008), Nummern wie am Bedienteil.
+      <b>Bedienbar</b> sind Parameter mit bekannter Befehls-ID (eigene Tabelle oder zugeordnet)${hbLan()?' – bei BSB-LAN alle':''}. Weitere über „Zuordnen“ aus dem ID-Suchlauf. Einstellungen gehen sofort an den Regler und werden zurückgelesen.</div>`;
+}
+// ---------- Anlern-Modus: Bedienung am Bedienteil mitschneiden, Prog.-Nr. selbst zuordnen ----------
+const hbAll=()=>{ const m={}; HB.gruppen.forEach(g=>g.params.forEach(p=>{ m[String(p.nr)]={p,g}; })); return m; };
+const hbPer=e=>e.get>=4&&!e.set&&(e.last-e.first)>25;   // vom Bedienteil zyklisch abgefragt (z. B. Außentemperatur)
+const hbUserMap=()=>{ const m={}; ((BS&&BS.catalog)||[]).forEach(c=>{ m[c.cmd]=c; }); return m; };
+const hbEvVal=e=>{ const g=(e.guess||[])[0]; return g?g.text:(e.set_raw||e.raw||'–'); };
+function hbTeachRow(e,cm,live){
+  const c=cm[e.cmd], st=c?`<span class="hbb rw">${c.user?'zugeordnet':'bekannt'}: ${esc(String(c.line))}</span>`:e.set?'<span class="hbb tset">am Bedienteil geändert – eindeutig</span>':hbPer(e)?'<span class="hbb no">zyklisch</span>':'<span class="hbb r">angezeigt</span>';
+  const val=e.set?`${esc(e.set_from?((e.guess&&e.guess[0]&&e.set_from)?hbFmt(e.set_from,e):e.set_from):'–')} → <b>${esc(hbEvVal(e))}</b>`:`<b>${esc(hbEvVal(e))}</b>`;
+  const ctl=c?'':`<span class="hbset"><input class="q hbtn" id="hbtn-${e.cmd}" placeholder="Prog.-Nr." inputmode="numeric" value="${esc(HB_ED['t'+e.cmd]||'')}"><button class="btn sm pri" data-hbtmap="${e.cmd}">Zuordnen</button></span>`;
+  return `<div class="row hbtr${live?' live':''}"><span class="k"><span class="kt"><span class="hbnr" style="min-width:86px">${esc(e.cmd)}</span>${val}</span><small>${st} · ${e.get?e.get+'× angezeigt':''}${e.set?(e.get?' · ':'')+e.set+'× geändert':''} · vor ${bsAge(e.last)}</small></span>${ctl}</div>`;
+}
+const hbFmt=(raw,e)=>{ const g=(e.guess||[])[0]; if(!g) return raw; const d=hbDecode(raw,g.codec==='steil'?'steil':g.codec==='temp'?'temp':g.codec==='pct'?'pct':g.codec==='u16'?'u16':'u8'); return d?d.t+(g.codec==='temp'?' °C':''):raw; };
+function hbTeach(){
+  const T=BS&&BS.teach, run=!!(T&&T.running), cm=hbUserMap();
+  const ids=((T&&T.ids)||[]);
+  const neu=ids.filter(e=>!cm[e.cmd]&&!hbPer(e));
+  const live=run?ids.filter(e=>(e.set||e.get)&&!hbPer(e)).sort((a,b)=>Math.max(b.last_set||0,b.last_get||0)-Math.max(a.last_set||0,a.last_get||0))[0]:null;
+  const head=`<div class="card"><div class="cap">Anlern-Modus</div>
+    ${run?`<div class="row"><span class="k"><span class="kt"><span class="pill dm">● läuft</span>&nbsp; seit ${bsAge(T.started)}</span><small>${T.count||0} IDs beobachtet · ${neu.length} neu</small></span><button class="btn sm" data-hbteach="stop">Beenden</button></div>`
+      :`<div class="row"><span class="k"><span class="kt">Bedienung am Bedienteil mitschneiden</span><small>${T?`letzte Sitzung: ${T.count||0} IDs`:'Die Zuordnungen ermittelst du damit selbst an deiner Anlage – mit Nachweis (Datum, Regler, Mitschnitt).'}</small></span>
+        <span class="hbset">${T?'<button class="btn sm" data-hbteach="clear">Verwerfen</button>':''}<button class="btn sm pri" data-hbteach="start">Anlernen starten</button></span></div>`}
+    <div class="note"><b>So geht’s:</b> 1. Anlernen starten. 2. Am Bedienteil das Menü öffnen (z. B. Heizkreis 1) und Zeile für Zeile langsam weiterdrehen – oben erscheint jeweils die ID, die das Bedienteil gerade abfragt. Die Prog.-Nr. vom Display eintragen und „Zuordnen“. 3. Eindeutig wird es, wenn du einen Wert änderst (z. B. Komfortsollwert 20 → 21) – das Bedienteil schickt dann genau diese ID. Danach den Wert zurückstellen.</div></div>`;
+  const liveCard=run?`<div class="card hblive"><div class="cap">Jetzt am Bedienteil</div>${live?hbTeachRow(live,cm,true):'<div class="empty" style="padding:16px 0">Warte auf das Bedienteil … Menü öffnen und eine Zeile weiterdrehen.</div>'}</div>`:'';
+  const list=ids.length?`<div class="card"><div class="cap">Beobachtete IDs · ${ids.length}</div>${ids.slice().sort((a,b)=>(b.set-a.set)||(!!cm[a.cmd]-!!cm[b.cmd])||(hbPer(a)-hbPer(b))||(b.last-a.last)).map(e=>hbTeachRow(e,cm,false)).join('')}
+    <div class="note">„bekannt“ = steht schon in der eigenen Tabelle, „zyklisch“ = fragt das Bedienteil ständig ab (z. B. Außentemperatur). Zuordnungen kommen in deine Anlagen-Tabelle und sind sofort im Handbuch bedienbar.</div></div>`:'';
+  return head+liveCard+list;
+}
+async function hbTeachMap(cmd){
+  const el=document.getElementById('hbtn-'+cmd); const nr=el&&el.value.trim(); if(!nr) return;
+  const e=((BS.teach&&BS.teach.ids)||[]).find(x=>x.cmd===cmd)||{}, hit=hbAll()[String(parseFloat(nr))];
+  let name=hit?hit.p.name:prompt('Prog.-Nr. '+nr+' steht nicht im Handbuch – Name für den Wert:',''); if(!name) return;
+  const n=((e.set_raw||e.raw||'').split(' ').filter(Boolean).length||1)-1, len={temp:2,steil:2,pct:1,u8:1,u16:2,enum:1,onoff:1,u32:4,hours:4};
+  let codec=hit?hbCodec(hit.p):'u16';
+  if(len[codec]!==n) codec=n===1?((hit&&hit.p.opts&&hit.p.opts.length)?'enum':'u8'):n===2?(/°C/.test(hit?hit.p.std:'')?'temp':'u16'):n===4?'u32':codec;
+  const ro=hit?HB_RO.test(hit.g.name):true;
+  const how=e.set?`am Bedienteil geändert (${e.set_from||'–'} → ${e.set_raw||''}), Bus-Mitschnitt`:`am Bedienteil angezeigt (${e.get||0}× abgefragt), Bus-Mitschnitt`;
+  if(!confirm(`${cmd} → Prog.-Nr. ${nr} „${name}“\nDatentyp ${codec}${ro?' · nur lesen':' · lesen & schreiben'}\nWert jetzt: ${hbEvVal(e)}\n\nZuordnen?`)) return;
+  const lr={cmd,name,codec,ro,line:String(nr),source:how}; if(codec==='enum'&&hit&&hit.p.opts&&hit.p.opts.length) lr.opts=hit.p.opts;
+  delete HB_ED['t'+cmd]; await bsDo({learn:lr},'Zugeordnet: '+nr+' '+name); await bsDo({lines:[String(nr)]});
+}
+function hbAct(a){
+  const [k,v]=[a[0],a.slice(2)];
+  if(k==='g'){ if(HB_OPEN[v]) delete HB_OPEN[v]; else HB_OPEN[v]=1; }
+  else if(k==='p'){ HB_SEL=HB_SEL===v?'':v; }
+  else if(k==='l'){ HB_LV=v; }
+  else if(k==='s'){ HB_SUB=v; HB_Q=''; }
+  else if(k==='w'){ HB_WERT=!HB_WERT; if(HB_WERT) HB.gruppen.forEach((g,i)=>HB_OPEN[i]=1); }
+  else if(k==='a'){ const all=HB.gruppen.every((g,i)=>HB_OPEN[i]); HB_OPEN={}; if(!all) HB.gruppen.forEach((g,i)=>HB_OPEN[i]=1); }
+  try{ localStorage.setItem('emsehs_hbopen',JSON.stringify(HB_OPEN)); }catch(e){}
+}
+const hbFind=nr=>{ for(const g of HB.gruppen){ const p=g.params.find(x=>String(x.nr)===String(nr)); if(p) return {p,g}; } return {}; };
+// Klicks im Handbuch (true = erledigt)
+async function hbClick(b){
+  const d=b.dataset;
+  if(d.hb!=null){ hbAct(d.hb); render(); return true; }
+  if(d.hbstep){ const [nr,st]=d.hbstep.split(':'); const el=document.getElementById('hbin-'+nr); if(!el) return true;
+    const s=parseFloat(st), dec=(String(Math.abs(s)).split('.')[1]||'').length; let x=parseFloat(String(el.value).replace(',','.')); if(isNaN(x)) x=0;
+    x=Math.round((x+s)*1000)/1000; el.value=x.toFixed(dec).replace('.',','); HB_ED[nr]=el.value; return true; }
+  if(d.hbread){ await bsDo({lines:[d.hbread]},'Gelesen'); return true; }
+  if(d.hbrg){ const g=HB.gruppen[+d.hbrg], cm=hbCatMap(); const ls=g.params.filter(p=>hbAcc(p,g,cm).a!=='none').map(p=>String(p.nr));
+    for(let i=0;i<ls.length;i+=30) await bsDo({lines:ls.slice(i,i+30)},'Menü gelesen'); return true; }
+  if(d.hbset){ const nr=d.hbset, el=document.getElementById('hbin-'+nr); if(!el||el.value==='') return true;
+    const {p}=hbFind(nr), v=hbVals()[nr], val=el.value.trim();
+    if(!confirm(`${nr} ${p?p.name:''}\n${v?v.text:'–'}  →  ${val}\n\nAn den Regler senden?`)) return true;
+    if(BS) delete BS.write; await bsDo({write:{line:nr,value:val}}); const w=BS&&BS.write;
+    if(w && !String(BS_MSG).startsWith('err:')){ BS_MSG=w.ok?'ok:'+nr+' übernommen – '+((w.value&&w.value.text)||val):'err:'+nr+': Regler hat '+(w.result||'abgelehnt'); if(w.ok) delete HB_ED[nr]; }
+    safeRender(); return true; }
+  if(d.hbmap){ const nr=d.hbmap, {p,g}=hbFind(nr), cmd=(document.getElementById('hbcmd-'+nr)||{}).value, codec=(document.getElementById('hbcod-'+nr)||{}).value,
+      ro=!!(document.getElementById('hbro-'+nr)||{}).checked; if(!cmd||!p) return true;
+    if(!confirm(`Prog.-Nr. ${nr} „${p.name}“ der Befehls-ID ${cmd} (${codec}) zuordnen?`)) return true;
+    const lr={cmd,name:p.name,codec,ro,line:String(nr)}; if(codec==='enum'&&p.opts&&p.opts.length) lr.opts=p.opts;
+    await bsDo({learn:lr},'Zugeordnet'); await bsDo({lines:[String(nr)]},'Zugeordnet und gelesen'); return true; }
+  if(d.hbteach){ await bsDo({teach:{op:d.hbteach}},d.hbteach==='start'?'Anlernen läuft – am Bedienteil bedienen':d.hbteach==='stop'?'Anlernen beendet':''); return true; }
+  if(d.hbtmap){ await hbTeachMap(d.hbtmap); return true; }
+  if(d.hbforget){ if(!confirm('Zuordnung von Prog.-Nr. '+d.hbforget+' lösen? Der Wert landet nicht wieder bei „Unbekannte Werte“, bis er erneut gefunden wird.')) return true;
+    await bsDo({forget:d.hbforget},'Zuordnung gelöst'); return true; }
+  return false;
+}
 /* --- Werte: Adapter · Parameter · Favoriten --- */
-function bWerteAdapter(){ const q=BS_Q.toLowerCase(); const es=AE().filter(e=>e.domain!=='button'&&(!q||(aLbl(e)+' '+e.entity_id).toLowerCase().includes(q)));
+function bWerteAdapter(){ const q=BS_Q.toLowerCase(); const es=AEW().filter(e=>(!q||(aLbl(e)+' '+e.entity_id).toLowerCase().includes(q)));
   if(!es.length) return `<div class="card pad"><div class="empty">${AE().length?'Keine Treffer.':'Keine Werte des Adapters gefunden (nur beim ESPHome-Adapter).'}</div></div>`;
   const used=new Set(), cards=[];
   for(const [t,re] of B_GROUPS){ const l=es.filter(e=>!used.has(e.entity_id)&&re.test(aLbl(e))); l.forEach(e=>used.add(e.entity_id)); if(l.length) cards.push([t,l]); }
@@ -2301,9 +2579,10 @@ function bWerteAdapter(){ const q=BS_Q.toLowerCase(); const es=AE().filter(e=>e.
 function bWerte(){
   const ps=(BS.params||[]).length, fs=(bc().favorites||[]).length;
   const sg=(k,l)=>`<button class="${BS_WV===k?'on':''}" data-bwv="${k}">${l}</button>`;
+  if(BS_WV==='hb') return `<div class="seg">${sg('adapter','Adapter'+(AEW().length?' · '+AEW().length:''))}${sg('param','Parameter'+(ps?' · '+ps:''))}${sg('fav','★ Favoriten'+(fs?' · '+fs:''))}${HB?sg('hb','Handbuch'):''}</div><div style="margin-top:12px">${bHandbuch()}</div>`;
   const search=BS_WV!=='adapter'?'':`<input class="q bq" id="bsq" placeholder="${BS_WV==='adapter'?'Wert suchen …':'Zeile, Name oder Wert suchen …'}" value="${esc(BS_Q)}">`;
   const body=BS_WV==='param'?bsCardParams():BS_WV==='fav'?`<div class="grid"><div class="col">${bsCardFav().replace('<div class="cap">Bus-Abfrage &amp; Favoriten</div>',capI('Bus-Abfrage &amp; Favoriten','fav'))}</div><div class="col">${bFavCompact()}</div></div>`:bWerteAdapter();
-  return `<div class="seg">${sg('adapter','Adapter'+(AE().length?' · '+AE().length:''))}${sg('param','Parameter'+(ps?' · '+ps:''))}${sg('fav','★ Favoriten'+(fs?' · '+fs:''))}</div>${search}<div style="margin-top:12px">${body}</div>`; }
+  return `<div class="seg">${sg('adapter','Adapter'+(AEW().length?' · '+AEW().length:''))}${sg('param','Parameter'+(ps?' · '+ps:''))}${sg('fav','★ Favoriten'+(fs?' · '+fs:''))}${HB?sg('hb','Handbuch'):''}</div>${search}<div style="margin-top:12px">${body}</div>`; }
 /* --- Bus --- */
 function bBus(){ const b=BS, c=bc(), s=b.stats||{}, si=b.scan_info, j=b.job, q=bQuality(), us=(b.unknown||[]).length;
   const tiles=`<div class="tiles t6">${btile('Empfangen',nf(s.rx||0,0),'Telegramme')}${btile('Gesendet',nf(s.tx||0,0),'eigene Abfragen')}${btile('Rundsendungen',nf(s.inf||0,0),'INF vom Regler')}
@@ -2316,7 +2595,7 @@ function bBus(){ const b=BS, c=bc(), s=b.stats||{}, si=b.scan_info, j=b.job, q=b
   const accs=[
     bAcc('poll',BI.poll,'Bus-Abfrage & Mitschnitt',(c.poll_enabled?'Abfrage alle '+(c.poll_interval||60)+' s':'Abfrage aus')+' · Mitschnitt '+(c.log_enabled?'an':'aus'),poll),
     bAcc('scan',BI.scan,'Parameter-Scan',bsJob()&&j.type==='scan'?'läuft – '+(j.total?Math.round(100*j.done/j.total):0)+' %':si?si.found+' Werte · vor '+bsAge(si.t):'noch kein Scan',unwrap(bsCardScan()),'scan'),
-    c.kind==='esphome'?bAcc('probe',BI.dev,'ID-Suchlauf',bsJob()&&j.type==='probe'?'läuft – '+(j.total?Math.round(100*j.done/j.total):0)+' %':'weitere Werte des Reglers finden',unwrap(bsCardProbe()),'probe'):'',
+    c.kind==='esphome'?bAcc('probe',BI.dev,'ID-Suchlauf',bsJob()&&j.type==='probe'?'läuft – '+(j.total?Math.round(100*j.done/j.total):0)+' %'+(j.auto?' (automatisch)':''):(()=>{ const ps=b.probe_presets||[], pd=b.probe_done||{}, g=ps.filter(x=>(pd[x[1]+x[2]+x[3]]||{}).complete).length; return g?(g===ps.length?'✓ alle Bereiche gelesen':g+' von '+ps.length+' Bereichen gelesen'):'weitere Werte des Reglers finden'; })(),unwrap(bsCardProbe()),'probe'):'',
     bAcc('learn',BI.learn,'Unbekannte Werte anlernen',us+' offen · '+(b.learned_count||0)+' angelernt',unwrap(bsCardUnknown()),'learn'),
     bAcc('parts',BI.bus,'Bus-Teilnehmer',((b.participants||[]).length)+' Geräte',parts)].filter(Boolean);
   const h=Math.ceil(accs.length/2);
@@ -2354,11 +2633,13 @@ async function bsbClick(b){
     BS_MSG=''; render(); if(b.dataset.bgo) window.scrollTo(0,0); if(acc){ const x=$('#bacc-'+acc); x&&x.scrollIntoView({block:'start'}); }
     if(BSUB==='log') loadBLog().then(()=>{ if(TAB==='bsb') bLogRefresh(); }); return true; }
   if(b.dataset.bacc){ const k=b.dataset.bacc; if(BS_OPEN[k]) delete BS_OPEN[k]; else BS_OPEN[k]=1; try{localStorage.setItem('emsehs_bopen',JSON.stringify(BS_OPEN));}catch(e){} render(); return true; }
+  if(TAB==='bsb' && await hbClick(b)) return true;
   if(b.dataset.bwv){ BS_WV=b.dataset.bwv; try{localStorage.setItem('emsehs_bwv',BS_WV);}catch(e){} render(); return true; }
   if(b.dataset.bct){ b.classList.toggle('on'); await bsDo({config:{[b.dataset.bct]:!bc()[b.dataset.bct]}},'Gespeichert'); if(b.dataset.bct==='log_enabled'){ await loadBLog(); safeRender(); } return true; }
   if(b.dataset.bfav){ await bsDo({favorite:{line:b.dataset.bfav,on:b.dataset.on==='1'}},b.dataset.on==='1'?'Als Favorit gespeichert – erscheint als Sensor':'Favorit entfernt'); return true; }
   if(b.dataset.bq){ b.disabled=true; await bsDo({lines:[b.dataset.bq]},'Neu abgefragt'); return true; }
   if(b.dataset.bsel){ b.disabled=true; await bsDo({select:b.dataset.bsel},'Adapter übernommen – Regler wird erkannt'); return true; }
+  if(b.dataset.bprobeall!=null){ const ag=b.dataset.bprobeall==='1'; if(!confirm(ag?'Alle Bereiche neu lesen? Das dauert ca. 1 Stunde und läuft im Hintergrund.':'Alle noch nicht gelesenen Bereiche nacheinander lesen? Läuft im Hintergrund, nur lesen.')) return true; await bsDo({probe_all:{again:ag}},'Suchlauf gestartet'); return true; }
   if(b.dataset.bprobe){ const x=b.dataset.bprobe.split('|'); if(!confirm('ID-Suchlauf „'+x[0]+'“ starten? Der Adapter fragt dabei nur Werte ab.')) return true; await bsDo({probe:{prefix:x[1],start:x[2],end:x[3],name:x[0]}},'Suchlauf gestartet'); return true; }
   if(b.dataset.blearn){ const cmd=b.dataset.blearn, n=(($('#bln_'+cmd)||{}).value||'').trim(), cod=(document.querySelector('[data-bcod="'+cmd+'"]')||{}).value;
     if(!n){ alert('Bitte einen Namen eingeben.'); return true; } await bsDo({learn:{cmd,name:n,codec:cod}},'Angelernt: '+n); return true; }
@@ -2699,7 +2980,10 @@ $('#main').addEventListener('change',ev=>{
     el._dirty=Date.now(); setVal(el,()=>call('number','set_value',{entity_id:el.dataset.num,value:v})); return; }
   if(el.dataset.act==='lvl'){ ws({type:'ems_esp_manager/samsung/log_level',level:el.value}).then(()=>{ if(ST) ST.log_level=el.value; loadLog(); }).catch(e=>alert(e&&e.message||e)); }
 });
-$('#main').addEventListener('input',ev=>{ const t=ev.target; if(TAB==='bsb' && t.id==='bsq'){ BS_Q=t.value; const pos=t.selectionStart; render(); const n=$('#bsq'); if(n){ n.focus(); n.setSelectionRange(pos,pos); } } });
+$('#main').addEventListener('input',ev=>{ const t=ev.target; if(TAB==='bsb' && t.id==='bsq'){ BS_Q=t.value; const pos=t.selectionStart; render(); const n=$('#bsq'); if(n){ n.focus(); n.setSelectionRange(pos,pos); } }
+  if(TAB==='bsb' && t.id==='hbq'){ HB_Q=t.value; const pos=t.selectionStart; render(); const n=$('#hbq'); if(n){ n.focus(); n.setSelectionRange(pos,pos); } }
+  if(TAB==='bsb' && t.id && t.id.startsWith('hbin-')) HB_ED[t.id.slice(5)]=t.value;
+  if(TAB==='bsb' && t.id && t.id.startsWith('hbtn-')) HB_ED['t'+t.id.slice(5)]=t.value; });
 $('#main').addEventListener('pointerdown',()=>{ if(TAB==='heizstab') H_TOUCH=Date.now(); },true);
 $('#main').addEventListener('keydown',ev=>{ const t=ev.target; if(ev.key==='Enter' && (t.dataset.num||t.dataset.hcn||t.dataset.hdn||t.dataset.hds)) t.blur(); if(ev.key==='Enter' && t.id==='hhost'){ const b=document.querySelector('[data-act="hhost"]'); b&&b.click(); } });
 /* Panel-Datei hochladen */
@@ -2738,7 +3022,7 @@ async function loadAll(){
     setInterval(()=>{ if(!document.hidden && !BSBMODE && TAB==='verbindung' && LSUB!=='wpa' && !LOG.pause && !LBUSY) loadLog(); },4000);
     let BTICK=0;
     setInterval(async()=>{ if(document.hidden || !(TAB==='bsb' || (BSBMODE && (TAB==='verbindung'||TAB==='system')))) return; BTICK++;
-      const busy=!!(bsJob() || (BS&&BS.find&&BS.find.running) || (BS&&BS.fw&&BS.fw.job&&BS.fw.job.running));
+      const busy=!!(bsJob() || (BS&&BS.teach&&BS.teach.running) || (BS&&BS.find&&BS.find.running) || (BS&&BS.fw&&BS.fw.job&&BS.fw.job.running));
       if(busy || BTICK%4===0){ await bsLoad(null, true); const a=document.activeElement; if(!(a && a.closest && a.closest('#main') && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName))) safeRender(); }
       if(((TAB==='bsb'&&BSUB==='log'&&LSUB!=='wpa')||TAB==='verbindung') && bc().log_enabled && !BLOG.pause){ await loadBLog(); bLogRefresh(); } },2500);
     setInterval(async()=>{ if(document.hidden || HBUSY || TAB!=='heizstab') return; HBUSY=true;

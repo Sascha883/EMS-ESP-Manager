@@ -746,10 +746,12 @@ async def ws_dhwopt(hass: HomeAssistant, connection, msg) -> None:
         vol.Optional("test", default=False): bool,
         vol.Optional("writes", default=True): bool,
         vol.Optional("read", default=False): bool,
+        vol.Optional("fresh", default=False): bool,
         vol.Optional("input"): dict,
         vol.Optional("learn"): dict,
         vol.Optional("itest"): dict,
         vol.Optional("dimprog"): dict,
+        vol.Optional("silent"): dict,   # v1.24.4: {"key": mode|mintemp|from|to|level, "value": int}
     }
 )
 @websocket_api.async_response
@@ -762,7 +764,7 @@ async def ws_plim(hass: HomeAssistant, connection, msg) -> None:
     if pl is None:
         connection.send_error(msg["id"], "not_loaded", "EMS-ESP Manager nicht geladen")
         return
-    if ("config" in msg or "set" in msg or "input" in msg or "learn" in msg or "itest" in msg or "dimprog" in msg or msg["test"]) and not connection.user.is_admin:
+    if ("config" in msg or "set" in msg or "input" in msg or "learn" in msg or "itest" in msg or "dimprog" in msg or "silent" in msg or msg["test"]) and not connection.user.is_admin:
         connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
         return
     if "config" in msg:
@@ -776,6 +778,8 @@ async def ws_plim(hass: HomeAssistant, connection, msg) -> None:
             bool(inp["on"]) if "on" in inp else None,
             int(inp["mod"]) if inp.get("mod") is not None else None,
         )
+    if "silent" in msg:
+        await pl.async_set_silent(str(msg["silent"].get("key", "")), msg["silent"].get("value"))
     if "learn" in msg:
         lr = msg["learn"]
         if lr.get("stop"):
@@ -806,6 +810,11 @@ async def ws_plim(hass: HomeAssistant, connection, msg) -> None:
             await pl.read()
         except Exception:  # noqa: BLE001 - live values are optional
             _LOGGER.debug("power limit values not readable", exc_info=True)
+        try:   # v1.24.3: EVU Dimmen (0x486 Offset 57) liefert EMS-ESP nicht – direkt bei der WP lesen, max. alle 2 min
+            # v1.24.4: dabei auch geräuscharmer Betrieb (0x484) + aktives Limit (0x048D); mit "fresh" sofort
+            await pl.read_extra(0 if msg.get("fresh") else 120.0)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("power limit extra values not readable", exc_info=True)
     connection.send_result(msg["id"], pl.snapshot())
 
 
@@ -975,8 +984,14 @@ async def ws_heater_log(hass: HomeAssistant, connection, msg) -> None:
         vol.Optional("action"): vol.In(["identify", "scan_quick", "scan_full", "cancel", "poll", "clear_scan", "clear_unknown", "reconnect"]),
         # ID-Suchlauf: {"prefix": "2D3D", "start": "0500", "end": "06FF", "name": "..."}
         vol.Optional("probe"): {vol.Required("prefix"): str, vol.Required("start"): str, vol.Required("end"): str, vol.Optional("name"): str},
+        # v1.24.5: alle Bereiche nacheinander: {"again": false} (nur noch nicht gelesene) / {"again": true}
+        vol.Optional("probe_all"): {vol.Optional("again", default=False): bool},
         # Anlernen: {"cmd": "053D0B26", "name": "...", "codec": "temp"}
-        vol.Optional("learn"): {vol.Required("cmd"): str, vol.Required("name"): str, vol.Required("codec"): str, vol.Optional("ro", default=True): bool},
+        vol.Optional("learn"): {vol.Required("cmd"): str, vol.Required("name"): str, vol.Required("codec"): str, vol.Optional("ro", default=True): bool,
+                                vol.Optional("line"): vol.Coerce(str), vol.Optional("opts"): [vol.Coerce(str)],
+                                vol.Optional("source", default=""): str},
+        # v1.25.0: Anlern-Modus {"op": "start" | "stop" | "clear"}
+        vol.Optional("teach"): {vol.Required("op"): vol.In(["start", "stop", "clear"])},
         vol.Optional("forget"): vol.Coerce(str),
         vol.Optional("lines"): [vol.Coerce(str)],
         vol.Optional("write"): {vol.Required("line"): vol.Coerce(str), vol.Required("value"): vol.Any(str, int, float)},
@@ -1001,7 +1016,7 @@ async def ws_bsb(hass: HomeAssistant, connection, msg) -> None:
     if ad is None:
         connection.send_error(msg["id"], "not_loaded", "EMS-ESP Manager nicht geladen")
         return
-    changing = any(k in msg for k in ("config", "find", "select", "pair", "action", "write", "favorite", "lines", "probe", "learn", "forget", "zeit"))
+    changing = any(k in msg for k in ("config", "find", "select", "pair", "action", "write", "favorite", "lines", "probe", "probe_all", "learn", "teach", "forget", "zeit"))
     if changing and not connection.user.is_admin:
         connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
         return
@@ -1041,8 +1056,13 @@ async def ws_bsb(hass: HomeAssistant, connection, msg) -> None:
     if "probe" in msg:
         pr = msg["probe"]
         await ad.async_probe(int(pr["prefix"], 16), int(pr["start"], 16), int(pr["end"], 16), pr.get("name", ""))
+    if "probe_all" in msg:
+        out["probe_all"] = await ad.async_probe_all(again=msg["probe_all"]["again"])
     if "learn" in msg:
-        out["learned"] = await ad.async_learn(msg["learn"]["cmd"], msg["learn"]["name"], msg["learn"]["codec"], msg["learn"]["ro"])
+        lr = msg["learn"]
+        out["learned"] = await ad.async_learn(lr["cmd"], lr["name"], lr["codec"], lr["ro"], lr.get("line"), lr.get("opts"), lr.get("source", ""))
+    if "teach" in msg:
+        await ad.async_teach(msg["teach"]["op"])
     if "forget" in msg:
         await ad.async_forget(msg["forget"])
     if msg.get("lines"):

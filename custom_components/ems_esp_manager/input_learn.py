@@ -31,7 +31,7 @@ _RE_LINE = re.compile(
 
 # gezielte Lesezugriffe vorher/nachher: (Gerät, Typ, Offset, Länge)
 READS: tuple[tuple[int, int, int, int], ...] = (
-    (0x08, 0x486, 0, 27), (0x08, 0x486, 20, 8), (0x08, 0x486, 27, 27), (0x08, 0x486, 42, 12),
+    (0x08, 0x486, 0, 27), (0x08, 0x486, 20, 8), (0x08, 0x486, 27, 27), (0x08, 0x486, 42, 12), (0x08, 0x486, 54, 8),
     (0x08, 0x4A2, 0, 27),
     (0x08, 0x4A8, 0, 27), (0x08, 0x4A9, 0, 27), (0x08, 0x4AB, 0, 27), (0x08, 0x4CA, 0, 27),
 )
@@ -46,7 +46,9 @@ MEASURE_TYPES = frozenset({0xE3, 0xE4, 0xE5, 0xE9, 0x48D, 0x48F, 0x494, 0x495, 0
 _OFF_123 = {"inv": 0, "evu1": 3, "evu2": 6, "evu3": 9, "comp": 12, "aux": 15, "cool": 18,
             "heat": 21, "dhw": 24, "mod": 27, "pres": 30, "prot": 36, "pv": 39}
 _OFF_4 = {"inv": 42, "comp": 43, "aux": 44, "cool": 45, "heat": 46, "dhw": 47, "mod": 48,
-          "pres": 49, "prot": 50, "pv": 52}
+          "pres": 49, "prot": 51, "pv": 52}   # v1.24.3: prot an Eingang 4 = 51 (Bus-Log 12.11.2026)
+# v1.24.3: Funktionen außerhalb der EMS-ESP-Tabelle (UI 800 Software 47.12)
+_OFF_EXTRA = {57: "Eingang 1: EVU Dimmen"}
 FUNC_TEXT = {
     "inv": "Eingang invertiert", "evu1": "EVU-Sperrzeit 1", "evu2": "EVU-Sperrzeit 2", "evu3": "EVU-Sperrzeit 3",
     "comp": "Kompressor sperren", "aux": "Zuheizerbetr. sperren", "cool": "Kühlbetrieb sperren",
@@ -57,6 +59,8 @@ FUNC_TEXT = {
 
 def hpin_offset_text(offset: int) -> str | None:
     """0x486-Offset -> „Eingang n: Funktion“ nach der EMS-ESP-Zuordnung."""
+    if offset in _OFF_EXTRA:
+        return _OFF_EXTRA[offset]
     for key, base in _OFF_123.items():
         if base <= offset <= base + 2:
             return f"Eingang {offset - base + 1}: {FUNC_TEXT[key]}"

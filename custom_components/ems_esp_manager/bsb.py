@@ -73,7 +73,14 @@ DEFAULTS: dict[str, Any] = {
     "brand": "",              # Hersteller für das Dashboard („Brötje“ → „Brötje EHS“); leer = automatisch
     "ota_password": "",       # Firmware-Update: Passwort aus „ota: password“ (leer = keins)
     "ota_port": esp_ota.OTA_PORT,
+    "auto_probe": True,       # v1.24.5: ID-Suchlauf aller Bereiche einmal automatisch im Hintergrund
 }
+AUTO_PROBE_DELAY = 180        # s nach dem Start bzw. nach dem Verbinden des Adapters
+AUTO_PROBE_RETRY = 900        # s bis zum nächsten Versuch, wenn der Adapter nicht bereit war
+
+
+def _probe_key(prefix: int, start: int, end: int) -> str:
+    return f"{prefix:04X}{start:04X}{end:04X}"
 _LIMITS = {"poll_interval": (10, 3600), "dest": (0, 127), "ota_port": (1, 65535)}
 _SECRET = ("password", "ota_password")
 FW_KEEP = 6                   # so viele hochgeladene Firmware-Dateien aufheben
@@ -131,7 +138,7 @@ class BsbAdapter:
         self._task: asyncio.Task | None = None
         self._find_task: asyncio.Task | None = None
         self._find_results: dict[str, dict[str, Any]] = {}
-        self._waiters: list[tuple[int, asyncio.Future]] = []
+        self._waiters: list[tuple[int, asyncio.Future, tuple[int, ...]]] = []   # (ID, Future, erwartete Telegrammarten)
         self._bus_lock = asyncio.Lock()                   # immer nur eine eigene Abfrage auf dem Bus
         self._log_unsub: Callable[[], None] | None = None
         self._log_client = None
@@ -147,6 +154,9 @@ class BsbAdapter:
         self.fw_files: list[dict[str, Any]] = []
         self._fw_uploads: dict[str, dict[str, Any]] = {}
         self._fw_task: asyncio.Task | None = None
+        self._auto_next = time.time() + AUTO_PROBE_DELAY  # frühester automatischer ID-Suchlauf
+        # v1.25.0: Anlern-Modus – Bedienung am Bedienteil mitschneiden und Prog.-Nr. selbst zuordnen
+        self.teach: dict[str, Any] | None = None
 
     # ------------------------------------------------------------- Speicher
     @property
@@ -202,10 +212,17 @@ class BsbAdapter:
             self.unknown.clear()
             self.participants.clear()
             self.st.pop("ids", None)
+            self.st.pop("probe_done", None)            # neuer Adapter/Regler → Suchlauf wieder offen
+            self.st.pop("probe_auto_finished", None)
+            self._auto_next = time.time() + AUTO_PROBE_DELAY
             self._log("conn", f"Adapter gewählt: {self.title()}", force=True)
         for key, txt in (("log_enabled", "Bus-Mitschnitt"), ("poll_enabled", "Bus-Abfrage")):
             if before[key] != after[key]:
                 self._log("conn", f"{txt} {'eingeschaltet' if after[key] else 'ausgeschaltet'}", force=True)
+        if before["auto_probe"] != after["auto_probe"]:
+            self._log("conn", f"Automatischer ID-Suchlauf {'eingeschaltet' if after['auto_probe'] else 'ausgeschaltet'}", force=True)
+            if after["auto_probe"]:
+                self._auto_next = time.time() + 30
         if before["brand"] != after["brand"]:
             self._log("conn", f"Hersteller für das Dashboard: {self.brand_label()}", force=True)
             self.hass.async_create_task(_refresh_dashboard_title(self.hass))
@@ -309,7 +326,12 @@ class BsbAdapter:
             "brand_label": self.brand_label(),
             "brands": brand_names(),
             "not_supported": P.NOT_SUPPORTED,
+            "catalog": self.catalog_rows(),
+            "teach": self.teach_snapshot(),
+            "can_write": self.cfg["kind"] == BSBLAN or (self.cfg["kind"] == ESPHOME and self._has_set()),
             "probe_presets": [[n, f"{pre:04X}", f"{a:04X}", f"{b:04X}"] for n, pre, a, b in P.PROBE_PRESETS],
+            "probe_done": st.get("probe_done") or {},
+            "probe_auto": self.auto_probe_state(),
             "codecs": [[k, (v[4] or v[5])] for k, v in P.CODECS.items()],
             "fw": self.fw_snapshot(),
             "ha_entry": self.ha_entry_info(),
@@ -329,6 +351,20 @@ class BsbAdapter:
             if p:
                 r.update(self.cat.info(p))
         return r
+
+    def catalog_rows(self) -> list[dict[str, Any]]:
+        """v1.25.0: welche Prog.-Nr. lesbar/schreibbar sind (eigene Tabelle + Zuordnungen) – für „Werte → Handbuch“."""
+        if self.cat is None:
+            return []
+        out = []
+        for p in self.cat.params:
+            n, _s, div, prec, unit, kind = P.CODECS.get(p["codec"], P.CODECS["u16"])
+            en = P.ENUMS.get(p["enum"]) if p.get("enum") else None
+            out.append({"line": P._num(p["line"]), "cmd": f"{p['cmd']:08X}", "codec": p["codec"], "ro": p["ro"],
+                        "user": p.get("user", False), "name": p["name"], "unit": unit, "kind": kind,
+                        "step": 0.5 if p["codec"] == "temp" else (1 / div if kind == "num" and div != 1 else 1), "prec": prec,
+                        "enum": [[k, v] for k, v in en.items()] if en else None})
+        return out
 
     def param_rows(self) -> list[dict[str, Any]]:
         res = ((self.st.get("scan") or {}).get("results") or {})
@@ -434,7 +470,8 @@ class BsbAdapter:
 
     def _monitor_needed(self) -> bool:
         c = self.cfg
-        return c["kind"] == ESPHOME and (c["log_enabled"] or c["poll_enabled"] or self.job is not None)
+        return c["kind"] == ESPHOME and (c["log_enabled"] or c["poll_enabled"] or self.job is not None
+                                         or bool(self.teach and self.teach.get("running")))
 
     async def _async_update_monitor(self) -> None:
         """Log-Abo und Mitschnitt-Schalter nach Bedarf ein-/ausschalten."""
@@ -531,10 +568,12 @@ class BsbAdapter:
         if t.cmd in (5, 8):
             self.stats["err"] += 1
         # Antwort auf eine eigene Abfrage
-        if t.direction == "rx" and t.cmd in (7, 5, 8) and t.dst == ADAPTER_ADDR:
-            for want, fut in list(self._waiters):
-                if want == cmd and not fut.done():
+        if t.direction == "rx" and t.cmd in (4, 7, 5, 8) and t.dst == ADAPTER_ADDR:
+            for want, fut, kinds in list(self._waiters):
+                if want == cmd and t.cmd in kinds and not fut.done():
                     fut.set_result(t)
+        if self.teach and self.teach.get("running") and t.direction == "rx" and t.src != ADAPTER_ADDR:
+            self._teach_event(t, cmd, now)
         texts: list[str] = []
         if t.cmd in (2, 7) and self.cat is not None:
             lines = self.cat.for_cmd(cmd)
@@ -554,6 +593,73 @@ class BsbAdapter:
             info = "; ".join(texts) or f"ID {cmd:08X}" + (" (unbekannt)" if t.cmd in (2, 7) else "")
             self._log(cat, f"{t.cmd_name} {arrow} {info}", "WARNING" if t.cmd in (5, 8) else "INFO",
                       detail=f"{P.addr_name(t.src)} → {P.addr_name(t.dst)} · ID {cmd:08X} · Nutzdaten {t.payload.hex(' ').upper() or '–'}")
+
+    # ------------------------------------------------------------- v1.25.0: Anlern-Modus
+    TEACH_MAX = 400
+
+    def _teach_event(self, t: P.Telegram, cmd: int, now: float) -> None:
+        """Telegramm anderer Geräte (Bedienteil/Raumgerät ↔ Regler) während des Anlernens merken."""
+        if t.cmd not in (2, 3, 6, 7):
+            return
+        tc = self.teach
+        ids = tc.setdefault("ids", {})
+        k = f"{cmd:08X}"
+        e = ids.get(k)
+        if e is None:
+            if len(ids) >= self.TEACH_MAX:
+                return
+            e = ids[k] = {"cmd": k, "first": now, "n": 0, "get": 0, "set": 0, "inf": 0, "order": len(ids)}
+        e["n"] += 1
+        e["last"] = now
+        raw = t.payload.hex(" ").upper()
+        if t.cmd == 6:                      # Bedienteil fragt ab (Zeile wird angezeigt)
+            e["get"] += 1
+            e["last_get"] = now
+            e["src"] = t.src
+        elif t.cmd == 7:                    # Regler antwortet → aktueller Wert
+            if raw:
+                e["raw"] = raw
+        elif t.cmd == 3:                    # Bedienteil stellt einen Wert ein
+            e["set"] += 1
+            e["last_set"] = now
+            e["set_from"] = e.get("raw")
+            # SET: erstes Byte ist das Kennbyte (0x01 = Wert setzen) → für die Anzeige wie eine Antwort (0x00) lesen
+            e["set_raw"] = (bytes([0]) + t.payload[1:]).hex(" ").upper() if t.payload[:1] == b"\x01" else raw
+            e["src"] = t.src
+        elif t.cmd == 2:
+            e["inf"] += 1
+            if raw:
+                e["raw"] = raw
+        e["guess"] = P.guess(bytes.fromhex((e.get("set_raw") or e.get("raw") or "").replace(" ", ""))) if (e.get("set_raw") or e.get("raw")) else []
+        known = self.cat.for_cmd(cmd) if self.cat is not None else []
+        e["known"] = _key(known[0]["line"]) if known else None
+        tc["events"] = tc.get("events", 0) + 1
+        if t.cmd == 3:
+            self._log("scan", f"Anlernen: {P.addr_name(t.src)} stellt {k} ein ({e.get('set_from') or '–'} → {raw})", force=True)
+        if now - self._last_notify > 1.5:
+            self._notify()
+
+    async def async_teach(self, op: str) -> None:
+        if op == "start":
+            if self.cfg["kind"] != ESPHOME:
+                raise RuntimeError("Anlernen nur mit dem ESPHome-Adapter (Bus-Mitschnitt)")
+            self.teach = {"running": True, "started": time.time(), "ids": {}, "events": 0}
+            self._log("scan", "Anlernen gestartet – Bedienung am Bedienteil wird mitgeschnitten", force=True)
+        elif op == "stop" and self.teach:
+            self.teach["running"] = False
+            self.teach["stopped"] = time.time()
+            self._log("scan", f"Anlernen beendet – {len(self.teach.get('ids') or {})} IDs beobachtet", force=True)
+        elif op == "clear":
+            self.teach = None
+        await self._async_update_monitor()
+        self._notify()
+
+    def teach_snapshot(self) -> dict[str, Any] | None:
+        tc = self.teach
+        if not tc:
+            return None
+        ids = sorted((tc.get("ids") or {}).values(), key=lambda e: -(e.get("last") or 0))
+        return {k: v for k, v in tc.items() if k != "ids"} | {"ids": ids[:200], "count": len(tc.get("ids") or {})}
 
     def _remember_unknown(self, cmd: int, t: P.Telegram, now: float, found: bool = False) -> None:
         self.stats["unknown"] += 1
@@ -580,7 +686,7 @@ class BsbAdapter:
             node = self._node()
             for attempt in range(retries + 1):
                 fut: asyncio.Future = self.hass.loop.create_future()
-                item = (cmd, fut)
+                item = (cmd, fut, (7, 5, 8))
                 self._waiters.append(item)
                 try:
                     await self.hass.services.async_call(
@@ -596,6 +702,34 @@ class BsbAdapter:
                         self._waiters.remove(item)
                 await asyncio.sleep(0.3)
         return None
+
+    def _has_set(self) -> bool:
+        node = self._node()
+        return bool(node) and self.hass.services.has_service(ESPHOME, f"{node}_bsb_set")
+
+    async def esp_set(self, cmd: int, payload: bytes, timeout: float = 3.0) -> P.Telegram | None:
+        """v1.25.0: Befehls-ID schreiben (Firmware-Aktion bsb_set, ab Adapter-Firmware 2.10.0) und auf ACK/NACK warten."""
+        if not self._has_set():
+            raise RuntimeError("Adapter-Firmware ohne Aktion „bsb_set“ – ESP-Bus-Adapter-Firmware 2.10.0 aufspielen")
+        async with self._bus_lock:
+            self._subscribe()
+            if self._log_unsub is None:
+                raise RuntimeError(self.conn.get("msg") or "ESPHome-Adapter nicht verbunden")
+            fut: asyncio.Future = self.hass.loop.create_future()
+            item = (cmd, fut, (4, 5, 8))
+            self._waiters.append(item)
+            try:
+                await self.hass.services.async_call(
+                    ESPHOME, f"{self._node()}_bsb_set",
+                    {"field": f"{cmd:08X}", "daten": payload.hex().upper(), "dest": int(self.cfg["dest"])}, blocking=True,
+                )
+                async with asyncio.timeout(timeout):
+                    return await fut
+            except TimeoutError:
+                return None
+            finally:
+                if item in self._waiters:
+                    self._waiters.remove(item)
 
     async def esp_query_param(self, p: dict[str, Any], timeout: float = 2.0, retries: int = 1) -> P.Telegram | None:
         """Parameter abfragen – bei Ablehnung die Ausweich-IDs probieren; die passende ID wird gemerkt."""
@@ -800,9 +934,81 @@ class BsbAdapter:
             raise RuntimeError("ID-Suchlauf nur mit ESPHome-Adapter (BSB-LAN hat eine eigene Parameterliste)")
         if not 0 <= start <= end <= 0xFFFF or end - start > 0x1000:
             raise RuntimeError("Bereich ungültig (höchstens 4096 IDs je Suchlauf)")
-        self._start_job("probe", name=name, range=f"{prefix:04X}{start:04X}–{prefix:04X}{end:04X}")
+        self._start_job("probe", name=name, range=f"{prefix:04X}{start:04X}–{prefix:04X}{end:04X}", key=_probe_key(prefix, start, end))
         await self._async_update_monitor()
         self._task = self.hass.async_create_background_task(self._run(self._probe, prefix, start, end), "ems_esp_manager bsb probe")
+
+    # ------------------------------------------------------------- v1.24.5: alle Bereiche (auch automatisch)
+    def _probe_open(self) -> list[tuple[str, int, int, int]]:
+        done = self.st.get("probe_done") or {}
+        return [x for x in P.PROBE_PRESETS if not (done.get(_probe_key(x[1], x[2], x[3])) or {}).get("complete")]
+
+    def auto_probe_state(self) -> dict[str, Any]:
+        open_ = self._probe_open()
+        return {"enabled": bool(self.cfg["auto_probe"]), "finished": self.st.get("probe_auto_finished"),
+                "open": len(open_), "total": len(P.PROBE_PRESETS),
+                "next": None if self.st.get("probe_auto_finished") or not self.cfg["auto_probe"] else round(self._auto_next)}
+
+    async def async_probe_all(self, auto: bool = False, again: bool = False) -> bool:
+        """Alle Bereiche nacheinander – noch nicht gelesene zuerst; again=True liest alle neu."""
+        if self._busy():
+            return False
+        if self.cfg["kind"] != ESPHOME:
+            raise RuntimeError("ID-Suchlauf nur mit ESPHome-Adapter (BSB-LAN hat eine eigene Parameterliste)")
+        todo = list(P.PROBE_PRESETS) if again else self._probe_open()
+        if not todo:
+            return False
+        self._start_job("probe", name="Alle Bereiche" + (" (automatisch)" if auto else ""), auto=auto, all=True)
+        await self._async_update_monitor()
+        self._task = self.hass.async_create_background_task(self._run(self._probe_all, todo, auto), "ems_esp_manager bsb probe all")
+        return True
+
+    async def _probe_all(self, todo: list[tuple[str, int, int, int]], auto: bool) -> dict[str, Any]:
+        job = self.job or {}
+        job["total"] = sum(b - a + 1 for _n, _p, a, b in todo)
+        self._jlog(f"{'Automatischer ' if auto else ''}ID-Suchlauf: {len(todo)} Bereiche, {job['total']} IDs – läuft im Hintergrund, nur lesen")
+        new = known = base = 0
+        for name, pre, a, b in todo:
+            if job.get("cancel"):
+                break
+            job["key"] = _probe_key(pre, a, b)
+            job["part"] = name
+            self._jlog(f"→ {name}")
+            r = await self._probe(pre, a, b, base=base)
+            new += r["new"]
+            known += r["known"]
+            base += b - a + 1
+        job.pop("key", None)
+        job.pop("part", None)
+        if auto and not self._probe_open():
+            self.st["probe_auto_finished"] = time.time()
+            await self.mgr.async_save()
+        self._jlog(f"Alle Bereiche: {new} neue Werte, {known} schon in der Tabelle")
+        return {"new": new, "known": known}
+
+    async def _auto_probe_tick(self) -> None:
+        c = self.cfg
+        if (not c["auto_probe"] or c["kind"] != ESPHOME or self.st.get("probe_auto_finished")
+                or self._busy() or time.time() < self._auto_next):
+            return
+        if not self._probe_open():
+            self.st["probe_auto_finished"] = time.time()
+            await self.mgr.async_save()
+            return
+        caps = self.capabilities()
+        if not (caps.get("online") and caps.get("get")):
+            self._auto_next = time.time() + 60     # Adapter (noch) nicht da – bald wieder schauen
+            return
+        self._auto_next = time.time() + AUTO_PROBE_RETRY
+        try:
+            if not (self.st.get("ident") or {}).get("ident"):
+                # Regler noch nicht erkannt → erst die Erkennung, Suchlauf beim nächsten Durchgang
+                self._auto_next = time.time() + 120
+                await self.async_identify()
+                return
+            await self.async_probe_all(auto=True)
+        except Exception as err:  # noqa: BLE001
+            self._log("err", f"Automatischer ID-Suchlauf: {type(err).__name__}: {err}", "WARNING")
 
     def cancel(self) -> None:
         if self.job is not None:
@@ -877,32 +1083,52 @@ class BsbAdapter:
         self._jlog(f"Fertig nach {dur} s: {len(results)} Werte ({empty} ohne Wert), {errors} vom Regler nicht unterstützt")
         return {"found": len(results)}
 
-    async def _probe(self, prefix: int, start: int, end: int) -> dict[str, Any]:
-        """ID-Suchlauf: jede ID im Bereich einmal abfragen; Antworten → Unbekannte Werte / Tabelle."""
+    async def _probe(self, prefix: int, start: int, end: int, base: int | None = None) -> dict[str, Any]:
+        """ID-Suchlauf: jede ID im Bereich einmal abfragen; Antworten → Unbekannte Werte / Tabelle.
+
+        base=None: eigener Auftrag; sonst Teil von „Alle Bereiche“ (Fortschritt ab base)."""
         cat = await self.async_catalog()
         job = self.job or {}
         ids = [(prefix << 16) | lo for lo in range(start, end + 1)]
-        job["total"] = len(ids)
+        if base is None:
+            job["total"] = len(ids)
+        off = base or 0
         self._jlog(f"Suchlauf {prefix:04X}{start:04X} … {prefix:04X}{end:04X} ({len(ids)} IDs)")
-        new = known = 0
+        new = known = n = again = 0
+        f0 = job.get("found") or 0
         for i, cmd in enumerate(ids):
             if job.get("cancel"):
                 self._jlog("Abgebrochen")
                 break
-            t = await self.esp_query(cmd, timeout=0.8, retries=0)
-            job["done"] = i + 1
+            # v1.24.5: eine Wiederholung nur bei Zeitüberschreitung (Regler antwortet sonst sofort mit Fehler) –
+            # im Log 18.11. kam 313D0516 nur in einem von zwei Läufen
+            t = await self.esp_query(cmd, timeout=0.8, retries=1)
+            n = i + 1
+            job["done"] = off + n
             if t is None or t.cmd != 7:
                 continue
             if cat.for_cmd(cmd):
                 known += 1
                 continue
+            seen = cmd in self.unknown
             self._remember_unknown(cmd, t, time.time(), found=True)
+            if seen:            # schon bei „Unbekannte Werte“ – nicht nochmal als neu zählen
+                again += 1
+                continue
             new += 1
-            job["found"] = new
+            job["found"] = f0 + new
             g = P.guess(t.payload)
             self._jlog(f"neu: {cmd:08X}  Nutzdaten {t.payload.hex(' ').upper()}" + (f"  (z. B. {g[0]['text']})" if g else ""))
+        # v1.24.5: merken, welcher Bereich gelesen ist (Anzeige „Gelesen“, automatischer Suchlauf)
+        done = self.st.setdefault("probe_done", {})
+        k = _probe_key(prefix, start, end)
+        prev = done.get(k) or {}
+        done[k] = {"t": time.time(), "new": new, "known": known, "done": n, "total": len(ids),
+                   "complete": n == len(ids) or bool(prev.get("complete"))}
         await self._save_unknown()
-        self._jlog(f"Fertig: {new} neue Werte, {known} schon in der Tabelle – unter „Unbekannte Werte“ benennen")
+        self._jlog(f"Fertig: {new} neue Werte, {known} schon in der Tabelle" + (f", {again} schon bei „Unbekannte Werte“" if again else "")
+                   + " – unter „Unbekannte Werte“ benennen"
+                   if n == len(ids) else f"Bereich nicht vollständig ({n}/{len(ids)})")
         return {"new": new, "known": known}
 
     async def _save_unknown(self) -> None:
@@ -910,18 +1136,42 @@ class BsbAdapter:
         self._unknown_dirty = False
         await self.mgr.async_save()
 
-    async def async_learn(self, cmd_hex: str, name: str, codec: str, ro: bool = True) -> dict[str, Any]:
-        """Unbekannten Wert benennen → Anlagen-Tabelle (gilt wie die eigene Tabelle, auch für Sensoren)."""
+    async def async_learn(self, cmd_hex: str, name: str, codec: str, ro: bool = True,
+                          line: str | None = None, opts: list[str] | None = None, source: str = "") -> dict[str, Any]:
+        """Unbekannten Wert benennen → Anlagen-Tabelle (gilt wie die eigene Tabelle, auch für Sensoren).
+
+        v1.25.0: mit ``line`` unter der Prog.-Nr. des Handbuchs (z. B. 1645), mit ``opts`` als Auswahl."""
         cmd = int(cmd_hex, 16)
         if codec not in P.CODECS:
             raise RuntimeError("Unbekannter Datentyp")
         name = name.strip()[:60]
         if not name:
             raise RuntimeError("Name fehlt")
-        lines = [float(u["line"]) for u in self.user_params]
-        line = int(max(lines) + 1) if lines else USER_LINE_START
-        self.user_params.append({"line": line, "cmd": f"{cmd:08X}", "codec": codec, "name": name, "ro": ro,
-                                 "enum": "onoff" if codec == "onoff" else None})
+        if line not in (None, ""):
+            ln = _f(line)
+            if ln is None or not 0 < ln < USER_LINE_START:
+                raise RuntimeError("Prog.-Nr. ungültig")
+            base = await self.async_catalog()
+            p0 = base.line(ln)
+            if p0 is not None and not p0.get("user"):
+                raise RuntimeError(f"Prog.-Nr. {_key(ln)} steht schon in der eigenen Tabelle ({p0['cmd']:08X})")
+            # neu zuordnen ersetzt eine frühere Zuordnung derselben Prog.-Nr.
+            self.mgr.vdata(VENDOR_BSB)["bsb_user_params"] = [u for u in self.user_params if _key(u["line"]) != _key(ln)]
+            line = int(ln) if ln == int(ln) else ln
+        else:
+            own = [float(u["line"]) for u in self.user_params if float(u["line"]) >= USER_LINE_START]
+            line = int(max(own) + 1) if own else USER_LINE_START
+        entry = {"line": line, "cmd": f"{cmd:08X}", "codec": codec, "name": name, "ro": ro,
+                 "enum": "onoff" if codec == "onoff" else None}
+        if opts:
+            entry["opts"] = [str(o)[:40] for o in opts][:40]
+        # Herkunft als Nachweis (selbst ermittelt): wann, wie, mit welchem Regler
+        ident = (self.st.get("ident") or {})
+        entry["origin"] = {"t": time.time(), "how": (source or "suchlauf")[:200], "device": ident.get("title") or ""}
+        if self.teach and f"{cmd:08X}" in (self.teach.get("ids") or {}):
+            ev = self.teach["ids"][f"{cmd:08X}"]
+            entry["origin"]["seen"] = {k: ev.get(k) for k in ("get", "set", "inf", "raw", "set_raw", "set_from", "src")}
+        self.user_params.append(entry)
         u = self.unknown.pop(cmd, None)
         cat = await self.async_catalog(reload=True)
         if u and u.get("payload") is not None:
@@ -929,7 +1179,7 @@ class BsbAdapter:
             d = P.decode(cat, p, u["payload"])
             self.values[_key(line)] = {**cat.info(p), "text": d["text"], "value": d["value"], "valid": d["valid"], "raw": d["raw"], "ts": u.get("last")}
         await self._save_unknown()
-        self._log("scan", f"Angelernt: {cmd:08X} → {line} {name} ({codec})", force=True)
+        self._log("scan", f"Angelernt: {cmd:08X} → {line} {name} ({codec})" + (f" – {source}" if source else ""), force=True)
         self._notify()
         return {"line": line}
 
@@ -1159,14 +1409,40 @@ class BsbAdapter:
     # ------------------------------------------------------------- Schreiben
     async def async_write(self, line: str, value: Any) -> dict[str, Any]:
         c = self.cfg
+        if c["kind"] == ESPHOME:
+            return await self._esp_write(line, value)
         if c["kind"] != BSBLAN:
-            raise RuntimeError("Direktes Schreiben nur mit BSB-LAN – beim ESPHome-Adapter über dessen Entitäten")
+            raise RuntimeError("Kein Adapter gewählt")
         data = await self.bsblan("JS", {"Parameter": str(line), "Value": str(value), "Type": "1", "Destination": str(c["dest"])})
         r = (data or {}).get(str(line)) or {}
         ok = int(r.get("status", 0) or 0) == 1
         self._log("tx", f"SET {line} = {value} → {'OK' if ok else 'abgelehnt'}", "INFO" if ok else "WARNING", force=True)
         await self.query_lines([str(line)])
         return {"ok": ok, "result": r}
+
+    async def _esp_write(self, line: str, value: Any) -> dict[str, Any]:
+        """v1.25.0: Parameter nach Prog.-Nr. über den ESPHome-Adapter schreiben (SET), danach zurücklesen."""
+        cat = await self.async_catalog()
+        p = cat.line(float(line)) if _f(line) is not None else None
+        if p is None:
+            raise RuntimeError(f"Zeile {line} ist noch keiner Befehls-ID zugeordnet – im Handbuch „Zuordnen“")
+        if p["ro"]:
+            raise RuntimeError(f"Zeile {line} ist nur lesbar")
+        try:
+            payload = P.encode(p, value)
+        except ValueError as err:
+            raise RuntimeError(str(err)) from err
+        key = _key(line)
+        cmd = int((self.st.get("ids") or {}).get(key) or f"{p['cmd']:08X}", 16)
+        t = await self.esp_set(cmd, payload)
+        ok = t is not None and t.cmd == 4
+        res = "OK" if ok else ("keine Antwort" if t is None else "abgelehnt")
+        self._log("tx", f"SET {key} {p['name']} ({cmd:08X}) = {value} [{payload.hex(' ').upper()}] → {res}",
+                  "INFO" if ok else "WARNING", force=True)
+        await asyncio.sleep(0.3)
+        vals = await self.query_lines([key])
+        self._notify()
+        return {"ok": ok, "result": res, "value": vals.get(key)}
 
     # ------------------------------------------------------------- zyklisch
     async def _tick(self, _now=None) -> None:
@@ -1179,7 +1455,10 @@ class BsbAdapter:
                 self._subscribe()
         if self._unknown_dirty and not self._busy() and int(time.time()) % 300 < 5:
             await self._save_unknown()
-        if not c["poll_enabled"] or not c["favorites"] or self._busy() or self._poll_lock.locked():
+        await self._auto_probe_tick()
+        # beim (langen) Suchlauf „Alle Bereiche“ laufen die Favoriten weiter – die Bus-Sperre wechselt ab
+        bg = bool(self.job and self.job.get("all") and self.job.get("running"))
+        if not c["poll_enabled"] or not c["favorites"] or (self._busy() and not bg) or self._poll_lock.locked():
             return
         if time.time() - self._last_poll < c["poll_interval"] - 1:
             return

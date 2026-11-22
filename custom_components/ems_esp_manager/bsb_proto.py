@@ -90,9 +90,18 @@ class Catalog:
     def __init__(self, user: list[dict[str, Any]] | None = None) -> None:
         self.params: list[dict[str, Any]] = [_p(*row) for row in PARAMS]
         self.user_enums: dict[str, dict[int, str]] = {}
+        base_lines = {float(r[0]) for r in PARAMS}
         for u in user or []:
             try:
-                self.params.append(_p(float(u["line"]), u["cmd"], u.get("codec", "u16"), u["name"], u.get("enum"),
+                if float(u["line"]) in base_lines:
+                    continue   # v1.25.2: steht inzwischen in der eigenen Tabelle – die gilt
+                enum = u.get("enum")
+                if u.get("opts"):   # v1.25.0: Auswahlwerte aus dem Handbuch (Wert = Position, ab 0)
+                    enum = f"hb{_num(float(u['line']))}"
+                    ENUMS[enum] = {i: str(t) for i, t in enumerate(u["opts"])}
+                    if u.get("codec") not in ("enum", "onoff"):
+                        u = {**u, "codec": "enum"}
+                self.params.append(_p(float(u["line"]), u["cmd"], u.get("codec", "u16"), u["name"], enum,
                                       "r" if u.get("ro", True) else "", tuple(), True))
             except (KeyError, ValueError):
                 continue
@@ -153,6 +162,13 @@ def decode_codec(codec: str, enum: str | None, payload: bytes) -> dict[str, Any]
         txt = s.split(b"\x00", 1)[0].decode("latin-1", "replace").strip()
         res.update(value=txt, text=txt)
         return res
+    if kind == "time":   # v1.25.2: hh:mm
+        if len(payload) < 3 or payload[0] in (0x01, 0x05):
+            res.update(valid=False, text="—")
+            return res
+        h, mi = payload[1], payload[2]
+        res.update(value=f"{h:02d}:{mi:02d}", text=f"{h:02d}:{mi:02d}")
+        return res
     if kind == "dt":
         if len(payload) < 8 or payload[0] & 1:
             res.update(valid=False, text="—")
@@ -181,6 +197,40 @@ def decode_codec(codec: str, enum: str | None, payload: bytes) -> dict[str, Any]
     txt = (f"{num:.{prec}f}" if prec else str(num)).replace(".", ",") + (f" {unit}" if unit else "")
     res.update(value=num, text=txt)
     return res
+
+
+def encode(p: dict[str, Any], value: Any) -> bytes:
+    """v1.25.0: Wert → Nutzdaten für SET (Kennbyte 0x01 + Wert, wie die Einstell-Entitäten der Firmware)."""
+    n, signed, div, prec, _unit, kind = CODECS.get(p["codec"], CODECS["u16"])
+    if kind in ("str", "dt", "err") or n == 0:
+        raise ValueError("Dieser Datentyp kann nicht geschrieben werden")
+    if kind == "time":
+        try:
+            h, mi = (int(x) for x in str(value).strip().split(":"))
+        except ValueError as err:
+            raise ValueError(f"„{value}“ ist keine Uhrzeit (hh:mm)") from err
+        if not (0 <= h <= 23 and 0 <= mi <= 59):
+            raise ValueError("Uhrzeit außerhalb 00:00–23:59")
+        return bytes([0x01, h, mi])
+    if kind == "enum":
+        names = ENUMS.get(p.get("enum") or "", {})
+        if isinstance(value, str) and not value.strip().lstrip("-").isdigit():
+            hit = [k for k, t in names.items() if t.lower() == value.strip().lower()]
+            if not hit:
+                raise ValueError(f"„{value}“ ist keine gültige Auswahl")
+            raw = hit[0]
+        else:
+            raw = int(float(value))
+    else:
+        try:
+            v = float(str(value).replace(",", ".").replace("°C", "").replace("%", "").strip())
+        except ValueError as err:
+            raise ValueError(f"„{value}“ ist keine Zahl") from err
+        raw = int(round(v * div))
+    lo, hi = (-(1 << (8 * n - 1)), (1 << (8 * n - 1)) - 1) if signed else (0, (1 << (8 * n)) - 1)
+    if not lo <= raw <= hi:
+        raise ValueError("Wert außerhalb des Bereichs")
+    return bytes([0x01]) + raw.to_bytes(n, "big", signed=signed)
 
 
 def guess(payload: bytes) -> list[dict[str, str]]:

@@ -541,7 +541,7 @@ const ENTITY_OVERRIDES = Object.assign({}, SAM_MODE ? SAMSUNG_MAP : {}, BSB_MODE
 const INSTALLER = (window.EMS_ESP_MANAGER && window.EMS_ESP_MANAGER.installer) || { name:"", addr:"", tel:"" };   // im Manager unter „Konfigurieren“
 const HEATING_CIRCUITS = [1,2,3,4];  // werden nur angezeigt, wenn thermostat_hcX_* existiert
 const SERVICE_PIN = "";               // leer = Servicemenü ohne PIN, z.B. "1234"
-const PANEL_VERSION = "2027.01.17";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
+const PANEL_VERSION = "2027.01.19";   // bei jeder neuen Version erhöhen (Upload im EMS-ESP Manager)
 
 // Vom EMS-ESP Manager beim Ausliefern gesetzt (nicht von Hand eintragen)
 const MGR = window.EMS_ESP_MANAGER || null;
@@ -1141,7 +1141,7 @@ const MENUS = {
     NAV('Estrichtrocknung','s_floor'),
   ]},
   s_hp: { title:'Wärmepumpe', svc:true, items:[
-    NAV('Geräuscharmer Betrieb','silent',{val:()=>has('select.boiler_silentmode')?selLabel('select.boiler_silentmode','silentmode'):''}),
+    NAV('Geräuscharmer Betrieb','silent',{val:()=>silNavVal()}),
     NAV('Externer Eingang','s_ext'),
     N('number.boiler_tempdiffheat','TC3-TC0 Temp.-diff. Hzg.'),
     N('number.boiler_tempdiffcool','TC0-TC3 Temp.-diff. Kühl.'),
@@ -1157,7 +1157,7 @@ const MENUS = {
     N('number.boiler_fan','Ventilator',{adv:true}),
     N('number.boiler_tempparmode','Außentemp. Parallelbetrieb',{adv:true}),
   ]},
-  silent: { title:'Geräuscharmer Betrieb', svc:true, items:[
+  silent_ent: { title:'Geräuscharmer Betrieb', svc:true, items:[   // v1.24.4: nur noch ohne Manager (Demo / reines Webseiten-Dashboard)
     SEL('select.boiler_silentmode','Betriebsart','silentmode'),
     N('number.boiler_silentfrom','Von',{fmt:'time'}),
     N('number.boiler_silentto','Bis',{fmt:'time'}),
@@ -2153,12 +2153,12 @@ function plCfg(){ return (PLIM && PLIM.config) || {}; }
 function plSt(){ return (PLIM && PLIM.state) || {}; }
 let PLIM_ERR = null;   // letzter Fehler einer Aktion {t, what, msg} – bleibt sichtbar
 async function plMsg(o, quiet){
-  const what = o.learn ? (o.learn.stop?'Anlernen beenden':'Anlernen starten') : o.dimprog ? (o.dimprog.stop?'Programm abbrechen':o.dimprog.start?'Dimm-Testprogramm starten':'Einstellung speichern') : o.itest ? 'Eingangstest starten' : o.test ? 'Test starten' : o.set!=null ? (o.set?'Dimmung ein':'Dimmung aus') : o.input ? 'Eingang '+o.input.n+' schreiben' : o.config ? 'Einstellung speichern' : 'Status lesen';
+  const what = o.silent ? 'Geräuscharmer Betrieb schreiben' : o.learn ? (o.learn.stop?'Anlernen beenden':'Anlernen starten') : o.dimprog ? (o.dimprog.stop?'Programm abbrechen':o.dimprog.start?'Dimm-Testprogramm starten':'Einstellung speichern') : o.itest ? 'Eingangstest starten' : o.test ? 'Test starten' : o.set!=null ? (o.set?'Dimmung ein':'Dimmung aus') : o.input ? 'Eingang '+o.input.n+' schreiben' : o.config ? 'Einstellung speichern' : 'Status lesen';
   const fail = msg => { if(!quiet){ PLIM_ERR = {t:new Date(), what, msg}; toast(what+': '+msg, 6000); } scheduleRender(); return false; };
   if(!conn.msg || !conn.ready) return fail(conn.type==='demo'
     ? 'keine Verbindung zu Home Assistant – das Panel läuft im Demo-Modus. Bitte die Seite neu laden (nach einem HA-Neustart ca. 1 min warten).'
     : 'keine Verbindung zu Home Assistant');
-  if(MGR && MGR.is_admin===false && (o.config||o.set!=null||o.test||o.itest||o.dimprog||o.input||o.learn))
+  if(MGR && MGR.is_admin===false && (o.config||o.set!=null||o.test||o.itest||o.dimprog||o.input||o.learn||o.silent))
     return fail('nur als Administrator möglich – der angemeldete Home-Assistant-Benutzer (bzw. das Panel-Token) hat keine Admin-Rechte');
   try{ PLIM = await conn.msg(Object.assign({type:'ems_esp_manager/panel/plim'}, o)); }
   catch(e){
@@ -2193,7 +2193,8 @@ function plTest(){
     ()=>{ plMsg({test:true}).then(ok=>{ if(ok) push({type:'plimlog',svc:true}); }); }, 'Test starten');
 }
 const PL_LIVE = [['hpcurrpower','Kompressorleistung',' W'],['hppowerlimit','Leistungsgrenze',' W'],['hpmaxpower','Max. Kompressorleistung',' %'],['powerreduction','Leistungsverringerung',' %']];
-MENUS.plim = { title:'Leistungsbegrenzung', get items(){ const c=plCfg(), st=plSt(), lv=(PLIM&&PLIM.live)||{}, inp=c.method!=='limit'; return [
+const PL_WEG = {input:'A – Eingang', limit:'B – Leistungsgrenze', silent:'C – Software-Drossel'};
+MENUS.plim = { title:'Leistungsbegrenzung', get items(){ const c=plCfg(), st=plSt(), lv=(PLIM&&PLIM.live)||{}, meth=c.method||'input', inp=meth==='input', sil=meth==='silent'; return [
   FN('Dimmung', ()=>{ if(st.testing){ toast('Test läuft'); return; } plMsg({set:!st.active}); }, {tog:()=>!!plSt().active}),
   FN('Status', ()=>plMsg({read:true}), {val:()=>plStatus()}),
   ...(PLIM_ERR?[TXT('⚠ '+PLIM_ERR.t.toLocaleTimeString('de-DE')+' '+PLIM_ERR.what+' fehlgeschlagen: '+PLIM_ERR.msg)]:[]),
@@ -2205,9 +2206,15 @@ MENUS.plim = { title:'Leistungsbegrenzung', get items(){ const c=plCfg(), st=plS
   FN('Beobachtung je Weg', ()=>plNum('Beobachtung je Weg','observe_s',20,900,10,'s',60), {val:()=>(c.observe_s??60)+' s'}),
   NAV('Dimm-Testprogramm','dimprog',{val:()=>st.testing&&st.test_kind==='dimprog'?dpPhase():'welche Funktion dimmt?'}),
   SEC('Verfahren'),
-  FN('Weg', ()=>push({type:'ledit',title:'Weg',kind:'sel',v:inp?'input':'limit',opts:[['input','A – Eingang per Software umschalten'],['limit','B – Leistungsgrenze direkt (W)']],save:v=>plSave({method:v})}),
-     {val:()=>plCfg().method==='limit'?'B – Leistungsgrenze':'A – Eingang'}),
-  ...(inp ? [
+  FN('Weg', ()=>{ if(st.active){ toast('Erst die Dimmung ausschalten'); return; } push({type:'ledit',title:'Weg',kind:'sel',v:meth,opts:[['input','A – Eingang per Software umschalten'],['limit','B – Leistungsgrenze direkt (W)'],['silent','C – Software-Drossel (geräuscharmer Betrieb)']],save:v=>plSave({method:v})}); },
+     {val:()=>PL_WEG[plCfg().method||'input']||'A – Eingang'}),
+  ...(sil ? [
+    FN('Stufe', ()=>push({type:'ledit',title:'Leistungsreduktion beim Dimmen',kind:'sel',v:String(c.silent_level||3),opts:SIL_LV,save:v=>plSave({silent_level:+v})}),
+       {val:()=>silLabel('level',plCfg().silent_level||3)}),
+    NAV('Geräuscharmer Betrieb', 'silent', {val:()=>silNavVal()}),
+    FN('Aktives Limit (0x048D)', ()=>plMsg({read:true,fresh:true}), {val:()=>lv.silent_limit==null?'–':String(lv.silent_limit), hint:'ohne Drossel 90 · Stufe 1 75 · 2 52 · 3 46'}),
+    FN('Mindestabstand', ()=>plNum('Mindestabstand zwischen Schaltungen','min_gap',60,3600,60,'s',300), {val:()=>Math.round((c.min_gap??300)/60)+' min'}),
+  ] : inp ? [
     FN('Eingang', ()=>push({type:'ledit',title:'Externer Eingang',kind:'sel',v:String(c.input||1),opts:[['1','Eingang 1 (empfohlen)'],['2','Eingang 2'],['3','Eingang 3'],['4','Eingang 4']],save:v=>plSave({input:+v})}),
        {val:()=>'Eingang '+(plCfg().input||1)}),
     NAV('Funktion des Eingangs', 'extin'+(c.input||1), {val:()=>plOpt(c.input||1)}),
@@ -2222,6 +2229,7 @@ MENUS.plim = { title:'Leistungsbegrenzung', get items(){ const c=plCfg(), st=plS
   ...PL_LIVE.map(([k,l,u])=>FN(l, ()=>plMsg({read:true}), {val:()=>lv[k]==null?'–':lv[k]+u})),
   ...[1,2,3,4].map(n=>FN('Eingang '+n, ()=>plMsg({read:true}), {val:()=>lv['hpin'+n]==null?'–':String(lv['hpin'+n])})),
   TXT('Weg A: Der gewählte Eingang bleibt unbeschaltet (Kontakt offen) und bekommt unter Externer Eingang eine Funktion – welche wirklich dimmt, zeigt das Dimm-Testprogramm. Im Ruhezustand steht „Eingang invertiert“ auf Nein. Zum Dimmen stellt der Manager „Eingang invertiert“ auf Ja: der offene Kontakt gilt dann als aktiv und die Funktion wirkt. Ist der Eingang schon dauerhaft invertiert, verweigert der Manager das Dimmen (die Funktion wäre sonst ständig aktiv). Das ist eine gespeicherte Einstellung im Regler, deshalb gilt der Mindestabstand. Weg B schreibt die Leistungsgrenze direkt (EMS-ESP hppowerlimit), wird aber nicht von jeder Wärmepumpe beantwortet.'),
+  TXT('Weg C (Software-Drossel): Zum Dimmen stellt der Manager den geräuscharmen Betrieb der Wärmepumpe auf „Dauerhaft an“ mit der gewählten Stufe (−30 bis −60 %). Beim Ausschalten schreibt er Betriebsart und Stufe auf den vorherigen Stand zurück. Jede Änderung gilt erst als übernommen, wenn die Wärmepumpe sie per Broadcast (0x484) bestätigt. Ob die Drossel greift, zeigt das aktive Limit (0x048D). Läuft die WP ohnehin in Teillast, sinkt die Leistung kaum.'),
   TXT('Hinweis §14a EnWG: Die Dimmung durch den Netzbetreiber läuft weiterhin über die Steuerbox am Klemmeneingang. Diese Software-Dimmung ist für eigene Zwecke (z. B. Peak-Shaving, PV) gedacht.'),
 ]; } };
 function vPlimLog(t){
@@ -2244,13 +2252,14 @@ setInterval(()=>{ const t=top_(); if(!conn.msg || !t) return;
   const testing = PLIM && PLIM.state && PLIM.state.testing;
   if(t.type==='plimlog'){ if(testing || !PLIM || !(PLIM.state&&PLIM.state.test_done)) plMsg({}, true); }
   else if(t.type==='learnlog' || (t.type==='menu' && t.id==='extlearn')){ if(!PLIM || (PLIM.state&&PLIM.state.learning) || !(PLIM.state&&PLIM.state.learn_done)) plMsg({}, true); }
+  else if(t.type==='menu' && t.id==='silent' && silMgr()){ const rd = !testing && Date.now()-(plMsg._rd||0) > 15000, fr = rd && Date.now()-(plMsg._sf||0) > 60000; if(rd) plMsg._rd=Date.now(); if(fr) plMsg._sf=Date.now(); plMsg(rd?{read:true,fresh:fr}:{}, true); }   // v1.24.4: 0x484 höchstens 1×/min direkt lesen
   else if(t.type==='menu' && (t.id==='plim' || /^extin\d$/.test(t.id) || t.id==='s_ext')){ const rd = !testing && Date.now()-(plMsg._rd||0) > 15000; if(rd) plMsg._rd=Date.now(); plMsg(rd?{read:true}:{}, true); }   // EMS-ESP höchstens alle 15 s fragen
   else if(t.type==='menu' && t.id==='dimprog'){ if(!PLIM || testing) plMsg({}, true); }
   else if(t.type==='menu' && (t.id==='ems'||t.id==='emsx')) plMsg({}, true);
 }, 3000);
 
 /* ---------- Dimm-Testprogramm: welche Eingangsfunktion dimmt die WP? (läuft im Manager) ---------- */
-const DP_STEPS = [['evu1','EVU-Sperrzeit 1'],['evu2','EVU-Sperrzeit 2'],['evu3','EVU-Sperrzeit 3'],['comp','Kompressor sperren'],['heat','Heizbetrieb sperren'],['dhw','Warmwasser sperren'],['pv','Photovoltaikanlage'],['mod','Begrenzungswert (ohne Funktion)']];
+const DP_STEPS = [['silent','Geräuscharmer Betrieb (Stufe 1–4)'],['dimm','EVU Dimmen (§14a)'],['evu1','EVU-Sperrzeit 1'],['evu2','EVU-Sperrzeit 2'],['evu3','EVU-Sperrzeit 3'],['comp','Kompressor sperren'],['heat','Heizbetrieb sperren'],['dhw','Warmwasser sperren'],['pv','Photovoltaikanlage'],['mod','Begrenzungswert (ohne Funktion)']];
 function dpCfg(){ return (PLIM && PLIM.dimprog) || {input:2, steps:['evu1','evu2','evu3','comp','heat'], pr:30, active_s:300, base_s:60, wait_run_s:600, recover_s:900, mod:50}; }
 const dpSave = patch => plMsg({dimprog:{config:patch}});
 function dpNum(title,key,min,max,step,unit,def){
@@ -2260,7 +2269,7 @@ function dpNum(title,key,min,max,step,unit,def){
 function dpMin(s){ return s>=120 ? Math.round(s/60)+' min' : s+' s'; }
 function dpPhase(){ const p=plSt().prog; if(!p) return 'läuft …'; let r=(p.step?p.step+' · ':'')+(p.phase||'');
   if(p.until){ const s=Math.max(0,Math.round((new Date(p.until)-Date.now())/1000)); r+=' · noch '+dpMin(s); } return r; }
-function dpDur(){ const c=dpCfg(), n=(c.steps||[]).length; return Math.round(n*((c.base_s||60)+(c.active_s||300)+Math.min(c.recover_s||900,600)+60)/60); }
+function dpDur(){ const c=dpCfg(), st=c.steps||[], n=st.length, x=st.includes('silent')?3:0; return Math.round((n*((c.base_s||60)+(c.active_s||300)+Math.min(c.recover_s||900,600)+60) + x*((c.active_s||300)+20))/60); }
 function dpStart(){
   const c=dpCfg(), n=c.input||2;
   if(!(c.steps||[]).length){ toast('Mindestens einen Schritt wählen'); return; }
@@ -2280,7 +2289,7 @@ MENUS.dimprog = { title:'Dimm-Testprogramm', get items(){ const c=dpCfg(), st=pl
      {val:()=>'Eingang '+n+' · '+plOpt(n)}),
   SEC('Schritte'),
   ...DP_STEPS.map(([k,l])=>FN(l, ()=>{ if(run) return; const cur=steps.includes(k); dpSave({steps:cur?steps.filter(x=>x!==k):DP_STEPS.map(x=>x[0]).filter(x=>x===k||steps.includes(x))}); },
-     Object.assign({tog:()=>(dpCfg().steps||[]).includes(k)}, k==='mod'?{adv:true, hint:'nur Eingang 1 oder 4'}:/^evu/.test(k)?{hint:'nicht an Eingang 4'}:k==='pv'?{hint:'hebt die Leistung eher an (Test 04.11.)'}:{}))),
+     Object.assign({tog:()=>(dpCfg().steps||[]).includes(k)}, k==='mod'?{adv:true, hint:'nur Eingang 1 oder 4'}:k==='silent'?{hint:'ohne Eingang · je Stufe „Aktiv je Schritt“'}:k==='dimm'?{hint:'nur Eingang 1 · mit Leistungsverringerung'}:/^evu/.test(k)?{hint:'nicht an Eingang 4'}:k==='pv'?{hint:'hebt die Leistung eher an (Test 04.11.)'}:{}))),
   SEC('Leistungsverringerung'),
   FN('Während des Tests', ()=>{ if(run) return; push({type:'ledit',title:'Leistungsverringerung während des Programms',kind:'sel',v:String(c.pr??30),opts:[['0','nicht ändern'],['30','30 %'],['40','40 %'],['50','50 %'],['60','60 %']],save:v=>dpSave({pr:+v})}); },
      {val:()=>(c.pr??30)?(c.pr??30)+' %':'nicht ändern', hint:'wird danach zurückgestellt'}),
@@ -2294,20 +2303,80 @@ MENUS.dimprog = { title:'Dimm-Testprogramm', get items(){ const c=dpCfg(), st=pl
   TXT('Das Programm probiert nacheinander aus, welche Eingangsfunktion die Wärmepumpe wirklich drosselt. Der freie Eingang bleibt unbeschaltet (Kontakt offen); der Manager setzt die Funktion und schaltet den Eingang über „Eingang invertiert“ aktiv – so wie es die Dimmung (Weg A) später macht. Gemessen werden Kompressorleistung, Drehzahl und Betriebszustand. Ergebnis je Schritt: gedimmt (Leistung reduziert), gesperrt (Kompressor aus) oder keine Reaktion. Am Ende werden Eingang und Funktionen auf den Ausgangszustand zurückgestellt. Am besten bei laufendem Kompressor starten (Heizbetrieb, Warmwasserladung).'),
 ]; } };
 
+/* ---------- v1.24.4: Geräuscharmer Betrieb wie am UI 800 (0x484, Manager liest/schreibt direkt bei der WP) ---------- */
+const SIL_MODES = [['0','Aus'],['1','Auto'],['2','Dauerhaft an']];
+const SIL_LV = [['1','Stufe 1 (−30 %)'],['2','Stufe 2 (−40 %)'],['3','Stufe 3 (−50 %)'],['4','Stufe 4 (−60 %)']];
+const SIL_OFF = {mode:10, mintemp:11, from:52, to:53, level:64};
+let SIL_BUSY = null;
+function silMgr(){ return !!(conn.msg && conn.type!=='demo'); }
+function slv(k){ const lv=(PLIM&&PLIM.live)||{}; if(lv['silent_'+k]!=null) return +lv['silent_'+k];
+  const f={from:'silentfrom',to:'silentto',mintemp:'mintempsilent'}[k]; if(f && lv[f]!=null && lv[f]!=='' && !isNaN(+lv[f])) return +lv[f];
+  if(k==='level' && lv.powerreduction!=null && !isNaN(+lv.powerreduction)) return Math.round(+lv.powerreduction/10)-2;
+  return null; }
+function silLabel(k,v){ if(v==null) return '–'; v=+v;
+  if(k==='mode') return ({0:'Aus',1:'Auto',2:'Dauerhaft an'})[v] ?? String(v);
+  if(k==='mintemp') return v===-31 ? 'Inaktiv' : v+' °C';
+  if(k==='from'||k==='to') return String(Math.floor(v/60)).padStart(2,'0')+':'+String(v%60).padStart(2,'0');
+  if(k==='level') return 'Stufe '+v+' (−'+((v+2)*10)+' %)';
+  return String(v); }
+function silNavVal(){ if(!silMgr()) return has('select.boiler_silentmode')?selLabel('select.boiler_silentmode','silentmode'):'';
+  const m=slv('mode'); return m==null ? '' : silLabel('mode',m)+(m===1&&slv('from')!=null?' · '+silLabel('from',slv('from'))+'–'+silLabel('to',slv('to')):''); }
+function silWeg(){ return plCfg().method==='silent' && plSt().active; }
+async function silSet(k,v){
+  if(SIL_BUSY){ toast('Bitte warten – es wird gerade geschrieben'); return; }
+  if(plSt().testing){ toast('Test läuft – bitte warten'); return; }
+  if(silWeg() && (k==='mode'||k==='level')){ toast('Die Dimmung (Weg C) nutzt gerade den geräuscharmen Betrieb – erst Dimmung ausschalten'); return; }
+  SIL_BUSY = k; render();
+  const ok = await plMsg({silent:{key:k, value:v}});
+  SIL_BUSY = null;
+  if(ok) toast('Geräuscharmer Betrieb: '+silLabel(k,v)+' – übernommen'); render();
+}
+function silTime(k,title){ const cur=slv(k); const t={type:'ledit',title,kind:'num',v:cur==null?(k==='from'?1320:360):cur,min:0,max:1425,step:15,unit:'Uhr',fmt:v=>silLabel(k,v)};
+  t.commit=()=>{ if(t.v!==cur) silSet(k,t.v); }; push(t); }
+function silFn(k,label,fn,o={}){ return FN(label, fn, Object.assign({val:()=>SIL_BUSY===k?'wird geschrieben …':silLabel(k,slv(k))}, settings.advanced?{hint:'0x484 Offset '+SIL_OFF[k]}:{}, o)); }
+MENUS.silent = { title:'Geräuscharmer Betrieb', svc:true, get items(){
+  if(!silMgr()) return MENUS.silent_ent.items;
+  const lv=(PLIM&&PLIM.live)||{}, m=slv('mode'), t=slv('mintemp'), weg=silWeg();
+  return [
+  ...(PLIM_ERR?[TXT('⚠ '+PLIM_ERR.t.toLocaleTimeString('de-DE')+' '+PLIM_ERR.what+' fehlgeschlagen: '+PLIM_ERR.msg)]:[]),
+  ...(weg?[WARN('Die Dimmung (Leistungsbegrenzung, Weg C) nutzt gerade den geräuscharmen Betrieb. Betriebsart und Stufe stellt sie beim Ausschalten zurück.')]:[]),
+  ...(!PLIM||m==null?[TXT(PLIM?'Werte werden direkt bei der Wärmepumpe gelesen …':'Verbindung zum Manager wird aufgebaut …')]:[]),
+  silFn('mode','Betriebsart', ()=>{ if(weg){ toast('Erst die Dimmung ausschalten'); return; } push({type:'ledit',title:'Betriebsart',kind:'sel',v:String(slv('mode')??0),opts:SIL_MODES,save:v=>silSet('mode',+v)}); }),
+  ...(m===1 ? [ silFn('from','Von', ()=>silTime('from','Von')), silFn('to','Bis', ()=>silTime('to','Bis')) ] : []),
+  FN('Abschalten unterhalb AT', ()=>push({type:'ledit',title:'Abschalten unterhalb Außentemperatur',kind:'sel',v:t===-31?'off':'on',opts:[['off','Inaktiv'],['on','Begrenzt']],
+      save:v=>{ const cur=slv('mintemp'); if(v==='off' && cur!==-31) silSet('mintemp',-31); else if(v==='on' && (cur==null||cur===-31)) silSet('mintemp',-10); }}),
+     Object.assign({val:()=>{ const x=slv('mintemp'); return SIL_BUSY==='mintemp'?'wird geschrieben …':x==null?'–':x===-31?'Inaktiv':'Begrenzt'; }}, settings.advanced?{hint:'0x484 Offset 11'}:{})),
+  ...(t!=null && t!==-31 ? [silFn('mintemp','Außentemperatur', ()=>{ const cur=slv('mintemp'); const e={type:'ledit',title:'Abschalten unterhalb Außentemperatur',kind:'num',v:cur,min:-30,max:20,step:1,unit:'°C',fmt:v=>fmtN(v,0)};
+      e.commit=()=>{ if(e.v!==cur) silSet('mintemp',e.v); }; push(e); })] : []),
+  silFn('level','Leistungsreduktion', ()=>{ if(weg){ toast('Erst die Dimmung ausschalten'); return; } push({type:'ledit',title:'Leistungsreduktion',kind:'sel',v:String(slv('level')??3),opts:SIL_LV,save:v=>silSet('level',+v)}); }),
+  SEC('Wirkung'),
+  FN('Kompressorleistung', ()=>plMsg({read:true,fresh:true}), {val:()=>lv.hpcurrpower==null?'–':lv.hpcurrpower+' W'}),
+  FN('Aktives Limit (0x048D)', ()=>plMsg({read:true,fresh:true}), {val:()=>lv.silent_limit==null?'–':String(lv.silent_limit), hint:'ohne Drossel 90 · Stufe 1 75 · 2 52 · 3 46'}),
+  FN('Solldrehzahl (0x04AA)', ()=>plMsg({read:true,fresh:true}), {val:()=>lv.silent_spd==null?'–':String(lv.silent_spd), adv:true}),
+  NAV('Als Leistungsbegrenzung nutzen','plim',{val:()=>plCfg().method==='silent'?'Weg C gewählt':'Weg C', samHide:true}),
+  TXT('Wie am UI 800: Jede Einstellung schreibt genau ein Byte in die Wärmepumpe (Telegramm 0x484) und gilt erst als übernommen, wenn die Wärmepumpe den neuen Wert selbst auf dem Bus meldet. Von/Bis gibt es nur bei „Auto“ (15-Minuten-Schritte). Die Leistungsreduktion wirkt nur, solange der geräuscharme Betrieb aktiv ist (Dauerhaft an bzw. Auto innerhalb der Zeit). Das aktive Limit (0x048D) zeigt, ob die Drossel greift.'),
+]; } };
+
 /* ---------- Externe Eingänge 1–4: Funktion direkt über EMS-ESP einstellen (hpinNopt) ---------- */
 const EXTIN_BITS = {
   123:[['inv','Eingang invertiert'],['evu1','EVU-Sperrzeit 1'],['evu2','EVU-Sperrzeit 2'],['evu3','EVU-Sperrzeit 3'],['comp','Kompressor sperren'],['aux','Zuheizerbetr. sperren'],
        ['cool','Kühlbetrieb sperren'],['heat','Heizbetrieb sperren'],['dhw','Warmwasser sperren'],['pv','Photovoltaikanlage'],['prot','Überhitzungsschutz'],['pres','Druckschalter']],
   4:  [['inv','Eingang invertiert'],['comp','Kompressor sperren'],['aux','Zuheizerbetr. sperren'],['cool','Kühlbetrieb sperren'],['heat','Heizbetrieb sperren'],['dhw','Warmwasser sperren'],
        ['pv','Photovoltaikanlage'],['prot','Überhitzungsschutz'],['pres','Druckschalter']] };
-// Menüpunkte wie am UI 800 der CS5800i (Fotos + Bus-Log 04.11.2026) – je Punkt 1 Byte in 0x486
-const EXTIN_UI = {1:['inv','aux','evu1'], 2:['inv','aux','heat'], 3:['inv','aux','prot'], 4:['inv','aux','pv']};
+// Menüpunkte wie am UI 800 (Software 47.12, Fotos + Bus-Log 12.11.2026) – je Punkt 1 Byte in 0x486
+const EXTIN_UI = {1:['inv','aux','dhw','heat','prot','dimm','pv'], 2:['inv','aux','dhw','heat','prot','pv'], 3:['inv','aux','dhw','heat','prot','pv'], 4:['inv','aux','dhw','heat','prot','pv']};
+// Funktionen, die EMS-ESP nicht kennt (nicht in hpinNopt) – der Manager liest/schreibt sie roh über den Bus
+const EXTIN_EXTRA = {1:[['dimm','EVU Dimmen']]};
+const EXTIN_EXTRA_OFF = {dimm:57};
 const EXTIN_OFF123 = {inv:0,evu1:3,evu2:6,evu3:9,comp:12,aux:15,cool:18,heat:21,dhw:24,pres:30,prot:36,pv:39};
-const EXTIN_OFF4 = {inv:42,comp:43,aux:44,cool:45,heat:46,dhw:47,pres:49,prot:50,pv:52};
-function extinOff(n,bit){ return n===4 ? EXTIN_OFF4[bit] : EXTIN_OFF123[bit]+n-1; }
+const EXTIN_OFF4 = {inv:42,comp:43,aux:44,cool:45,heat:46,dhw:47,pres:49,prot:51,pv:52};
+function extinIsExtra(n,bit){ return (EXTIN_EXTRA[n]||[]).some(b=>b[0]===bit); }
+function extinAll(n){ return EXTIN_BITS[n===4?4:123].concat(EXTIN_EXTRA[n]||[]); }
+function extinOff(n,bit){ return extinIsExtra(n,bit) ? EXTIN_EXTRA_OFF[bit] : n===4 ? EXTIN_OFF4[bit] : EXTIN_OFF123[bit]+n-1; }
 let EXTIN_BUSY = null;   // 'n:bit' während geschrieben wird
 function extinOpt(n){ const v=String((PLIM&&PLIM.live&&PLIM.live['hpin'+n+'opt'])||''); return /^[01]{9}/.test(v)?v:null; }
-function extinBit(n,bit){ const v=extinOpt(n); if(!v) return null; const i=EXTIN_BITS[n===4?4:123].findIndex(b=>b[0]===bit); return v[i]==='1'; }
+function extinBit(n,bit){ if(extinIsExtra(n,bit)){ const x=PLIM&&PLIM.live&&PLIM.live['hpin'+n+bit]; return x==null?null:!!+x; }
+  const v=extinOpt(n); if(!v) return null; const i=EXTIN_BITS[n===4?4:123].findIndex(b=>b[0]===bit); return v[i]==='1'; }
 function extinMod(n){ const v=extinOpt(n); if(!v) return null; const r=v.slice(EXTIN_BITS[n===4?4:123].length); return /^\d+$/.test(r)?+r:null; }
 async function extinSet(n,patch,label){
   if(EXTIN_BUSY){ toast('Bitte warten – es wird gerade geschrieben'); return; }
@@ -2318,21 +2387,22 @@ async function extinSet(n,patch,label){
   if(ok) toast('Eingang '+n+': '+label+' – von der Wärmepumpe bestätigt'); render();
 }
 function extinFn(n,k,l,o={}){
-  return FN(l, ()=>{ const cur=extinBit(n,k); if(cur==null) return; const lab=l+(cur?' → Nein':' → Ja');
+  return FN(l, ()=>{ const cur=extinBit(n,k); if(cur==null){ if(extinIsExtra(n,k)){ toast('Wird direkt bei der Wärmepumpe gelesen – bitte kurz warten'); plMsg({read:true}); } return; } const lab=l+(cur?' → Nein':' → Ja');
       if(k==='inv') askConfirm('Eingang '+n+' invertieren','Die Logik des Eingangs wird umgedreht: ein offener Kontakt gilt dann als aktiv. Ist eine Sperr- oder EVU-Funktion eingestellt, wird sie sofort wirksam.',()=>extinSet(n,{bit:k,on:!cur},lab),'Umschalten');
+      else if(k==='dimm' && !cur) askConfirm('EVU Dimmen einschalten','Sobald Eingang '+n+' aktiv ist (bzw. invertiert und offen), drosselt die Wärmepumpe ihre Leistung auf die eingestellte Leistungsverringerung (EVU-Dimmung nach §14a). Trotzdem einschalten?',()=>extinSet(n,{bit:k,on:true},lab),'Einschalten');
       else if(['evu1','evu2','evu3','comp','heat','dhw','cool'].includes(k) && !cur) askConfirm(l+' einschalten','Sobald der Eingang aktiv ist (bzw. invertiert und offen), sperrt die Wärmepumpe diese Betriebsart. Trotzdem einschalten?',()=>extinSet(n,{bit:k,on:true},lab),'Einschalten');
       else extinSet(n,{bit:k,on:!cur},lab); },
-    Object.assign({tog:()=>!!extinBit(n,k), val:EXTIN_BUSY===n+':'+k?()=>'wird geschrieben …':undefined}, settings.advanced?{hint:'0x486 Offset '+extinOff(n,k)}:{}, o));
+    Object.assign({tog:()=>!!extinBit(n,k), val:EXTIN_BUSY===n+':'+k?()=>'wird geschrieben …':(extinBit(n,k)==null&&extinIsExtra(n,k)?()=>'–':undefined)}, settings.advanced?{hint:'0x486 Offset '+extinOff(n,k)}:{}, o));
 }
 function extinTest(n, all){
   const what = n ? 'Eingang '+n : 'alle 4 Eingänge';
-  const cnt = (n?[n]:[1,2,3,4]).reduce((s,i)=>s+(all?EXTIN_BITS[i===4?4:123].length:EXTIN_UI[i].length),0);
+  const cnt = (n?[n]:[1,2,3,4]).reduce((s,i)=>s+(all?extinAll(i).length:EXTIN_UI[i].length),0);
   askConfirm('Funktionen testen – '+what,
     'Der Manager schaltet jede Funktion ('+(all?'alle aus 0x486':'die Menüpunkte wie am UI 800')+', '+cnt+' Punkte) einmal um, wartet auf die Bestätigung der Wärmepumpe, hält 3 s und stellt sie sofort zurück. Im Protokoll steht je Punkt: angenommen ja/nein und zurückgestellt – mit den Rohtelegrammen. Achtung: Sperr- und EVU-Funktionen können die Wärmepumpe für einige Sekunden sperren, der Kompressor kann dabei abschalten. Dauer ca. '+Math.max(1,Math.round(cnt*14/60))+' min.',
     ()=>{ plMsg({itest:{n:n||null, all:!!all}}).then(ok=>{ if(ok) push({type:'plimlog',svc:true}); }); }, 'Test starten');
 }
 function extinMenu(n){
-  const bits=EXTIN_BITS[n===4?4:123], ui=EXTIN_UI[n];
+  const bits=extinAll(n), ui=EXTIN_UI[n];
   return { title:'Externer Eingang '+n, svc:true, get items(){ const opt=extinOpt(n), lv=(PLIM&&PLIM.live)||{}; return [
     FN('Zustand', ()=>plMsg({read:true}), {val:()=>lv['hpin'+n]==null?'–':String(lv['hpin'+n])}),
     FN('Einstellung (roh)', ()=>plMsg({read:true}), {val:()=>opt||(PLIM?'nicht geliefert':conn.type==='demo'?'Demo-Modus – keine Verbindung':'wird geladen …'), adv:true}),
@@ -2350,13 +2420,13 @@ function extinMenu(n){
     FN('Alle Funktionen testen', ()=>{ if(plSt().testing){ push({type:'plimlog',svc:true}); return; } extinTest(n,true); }, {val:()=>bits.length+' Punkte', adv:true}),
     FN('Testprotokoll', ()=>push({type:'plimlog',svc:true}), {val:()=>{ const s=plSt(); return s.test_done?new Date(s.test_done).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'noch keins'; }}),
     FN('Funktion anlernen', ()=>{ if(!plSt().learning){ LEARN.n=n; if(!learnFnOpts(n).some(x=>x[0]===LEARN.fn)) LEARN.fn='keine'; } push({type:'menu',id:'extlearn'}); }, {val:()=>plSt().learning?'läuft …':'', adv:true}),
-    TXT('Jeder Schalter schreibt genau ein Byte in die Wärmepumpe (Telegramm 0x486, EMS-ESP hpin'+n+'opt) – so wie das UI 800. Übernommen gilt erst, wenn die Wärmepumpe den neuen Wert selbst auf dem Bus meldet. Die Zuordnung ist am 04.11.2026 an einer CS5800i mit UI 800 ermittelt.'+((n===2||n===3)?' Den Begrenzungswert gibt es nur für Eingang 1 und 4 (EMS-ESP würde ihn sonst bei Eingang 1 eintragen).':'')),
+    TXT('Jeder Schalter schreibt genau ein Byte in die Wärmepumpe (Telegramm 0x486, EMS-ESP hpin'+n+'opt) – so wie das UI 800. Übernommen gilt erst, wenn die Wärmepumpe den neuen Wert selbst auf dem Bus meldet. Die Zuordnung ist am 04.11. und 12.11.2026 an einer CS5800i/CS6800i mit UI 800 ermittelt (Software 47.12).'+(n===1?' „EVU Dimmen“ kennt EMS-ESP nicht: der Manager liest und schreibt es direkt bei der Wärmepumpe (0x486 Offset 57).':'')+((n===2||n===3)?' Den Begrenzungswert gibt es nur für Eingang 1 und 4 (EMS-ESP würde ihn sonst bei Eingang 1 eintragen).':'')),
   ]; } };
 }
 [1,2,3,4].forEach(n=>{ MENUS['extin'+n]=extinMenu(n); });
 MENUS.s_ext = { title:'Externer Eingang', svc:true, items:[...[1,2,3,4].map(n=>NAV('Externer Eingang '+n,'extin'+n,{val:()=>{ const lv=(PLIM&&PLIM.live)||{}; return (lv['hpin'+n]!=null?String(lv['hpin'+n])+' · ':'')+plOpt(n); }})),
   SEC('Test'),
-  FN('Funktionen testen (alle Eingänge)', ()=>{ if(plSt().testing){ push({type:'plimlog',svc:true}); return; } extinTest(null,false); }, {val:()=>plSt().testing?'läuft …':'12 Punkte'}),
+  FN('Funktionen testen (alle Eingänge)', ()=>{ if(plSt().testing){ push({type:'plimlog',svc:true}); return; } extinTest(null,false); }, {val:()=>plSt().testing?'läuft …':[1,2,3,4].reduce((s,i)=>s+EXTIN_UI[i].length,0)+' Punkte'}),
   FN('Testprotokoll', ()=>push({type:'plimlog',svc:true}), {val:()=>{ const s=plSt(); return s.test_done?new Date(s.test_done).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'noch keins'; }}),
   SEC('Anlernen',{adv:true}), NAV('Funktion anlernen','extlearn',{val:()=>plSt().learning?'läuft …':'', adv:true})] };
 
@@ -2922,7 +2992,7 @@ let BSBP = {prefix:'', start:'', end:''};
 function vBsbProbe(){
   const b=bsb()||{}, ps=b.probe_presets||[], run=bsbJob();
   const go = (name,pre,s,e) => { if(run){ toast('Es läuft schon ein Ablauf'); return; } bsbMsg({probe:{prefix:pre,start:s,end:e,name}}).then(r=>r&&push({type:'bsbjob'})); };
-  const rows=ps.map(x=>{ const n=parseInt(x[3],16)-parseInt(x[2],16)+1; return `<div class="row" data-a="${a(()=>go(x[0],x[1],x[2],x[3]))}"><span class="k">${esc(x[0])}<small>${esc(x[1]+x[2])} … ${esc(x[1]+x[3])} · ${n} IDs · ca. ${Math.round(n*0.9/60)} min</small></span><span class="v">starten${I.chevR}</span></div>`; }).join('');
+  const rows=ps.map(x=>{ const n=parseInt(x[3],16)-parseInt(x[2],16)+1; return `<div class="row" data-a="${a(()=>go(x[0],x[1],x[2],x[3]))}"><span class="k">${esc(x[0])}<small>${esc(x[1]+x[2])} … ${esc(x[1]+x[3])} · ${n} IDs · ca. ${Math.round(n*0.36/60)} min</small></span><span class="v">starten${I.chevR}</span></div>`; }).join('');
   return header('ID-Suchlauf')+`<div class="body kbd" style="bottom:calc(84px + var(--sb,0px))"><div class="list">
     <div class="note">Der Adapter fragt jede Befehls-ID im Bereich einmal beim Regler ab. Was der Regler beantwortet und noch nicht in der Tabelle steht, erscheint unter „Unbekannte Werte“ und kann dort benannt werden. Nur lesen – es wird nichts verstellt.</div>
     ${rows}</div>
